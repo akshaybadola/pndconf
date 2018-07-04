@@ -15,3 +15,4 @@ The templates in the settings/templates directory are derived from the repositor
 - Requires `live-server` from `nodejs` for automatic reloading of the current directory in the browser.
 - Basically `live-server` injects js code which refreshes the page automatically.
 - Will add more options and explanations later, with perhaps a python based version of `live-server` as it shouldn't be too difficult to implement.
+- **Still need to fix the paths so there may be issues right now**
