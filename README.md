@@ -8,6 +8,11 @@ The templates in the settings/templates directory are derived from the repositor
 --------
 ## Usage
 
+- `./pandocwatch.py -i ".md,.template" -g pdf,blog,reveal` watches all
+  directories and subdirectories for `.md` and `.template` files and
+  compiles if it notices any changes to `pdf`, `blog` and `reveal` format.
+- `pandoc` is used for generation and should be in the current
+  path. `pandoc` switches for the formats are stored in `config.ini`.
 - The settings folder contains empty directories which should be populated with respective modules.
 - charts.js file in settings should be replaced with the correct file.
 - `csl` files, according to the styles required should be procured and put in the settings/csl directory.
