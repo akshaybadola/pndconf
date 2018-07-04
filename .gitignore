@@ -1,7 +1,6 @@
-blog
-charts.js
-csl
-d3
-MathJax
-reveal.js
-templates
+settings/blog/*
+settings/charts.js
+settings/csl/*
+settings/d3/*
+settings/MathJax/*
+settings/reveal.js/*
