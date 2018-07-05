@@ -7,6 +7,7 @@
 - Now just need to organize the files and directories and tweak/fix the templates
 
 ### Next Todo
+- Instead of directives, perhaps I can store information in yaml metadata.
 - Directives should be at the top of the markdown files to indicate
   what is it to be generated from each file, so that it doesn't have
   to be specified at the command line.

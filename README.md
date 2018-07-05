@@ -1,5 +1,6 @@
 # pypanprocess
 Automatic conversion of markdown to various formats with pre defined settings via templates and folder watch with preview
+**The code is highly nascent and I wouldn't even call it alpha at this stage**
 
 --------
 
