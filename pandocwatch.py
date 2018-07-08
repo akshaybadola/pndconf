@@ -14,8 +14,6 @@ import subprocess
 import datetime
 import configparser
 import argparse
-import json
-from functools import reduce
 from glob import glob
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
@@ -85,19 +83,18 @@ class Singleton:
     def __instancecheck__(self, inst):
         return isinstance(inst, self._decorated)
 
-
+# What should configuration hold?
 @Singleton
 class Configuration:
     def __init__(self):
         self._conf = configparser.ConfigParser()
         self._conf.optionxform = str
         self._conf.read('config.ini')
-        self._dirContentAndTime = {}
-        self._excludedFileRegex = []
-        self._excludedFileExtensions = []
-        self._excludedFolders = []
-        self._includedFileExtensions = []
-        self._excludedFiles = []
+        self._excluded_regex = []
+        self._excluded_extensions = []
+        self._excluded_folders = []
+        self._included_extensions = []
+        self._excluded_files = []
 
     def setGenerationOpts(self, filetypes, pandoc_options):
         self._filetypes = filetypes
@@ -110,14 +107,16 @@ class Configuration:
                     else:
                         self._conf[section][opt] = ''
 
-    def getCommands(self, filename):
+    # should be a better way to compile with pdflatex
+    def get_commands(self, filename):
         assert filename.endswith('.md')
         assert self._filetypes
 
-        print(list(self._conf.sections()))
         commands = []
         filename = filename.replace('.md', '')
-        texstring = '; mkdir -p ' + filename + '_files ' + '; pdflatex  -file-line-error -output-directory ' + filename + '_files' + ' -interaction=nonstopmode "\input" ' + filename + '.tex'
+        pdflatex = 'pdflatex  -file-line-error -output-directory '\
+                   + filename + '_files' + ' -interaction=nonstopmode '\
+                   + '"\input"' + filename + '.tex'
         for ft in self._filetypes:
             command = []
             for k, v in self._conf[ft].items():
@@ -128,66 +127,52 @@ class Configuration:
                         command.append(k + ' ' + filename + '.' + v)
                     else:
                         command.append(k + (' ' + v) if v else '')
-            commands.append('pandoc ' + ' '.join(command) + ' ' + filename + '.md')
-            commands = [command + texstring
-                        if filename + '.tex' in command else command
-                        for command in commands]
+            command = 'pandoc ' + ' '.join(command) + ' ' + filename + '.md'
+            if ft == 'pdf':
+                command = [command, 'mkdir -p ' + filename + '_files']
+                command.append(pdflatex)
+            commands.append(command)
         return commands
 
-    def setIncludedFileExtensions(self, included_file_extensions):
-        self._includedFileExtensions = included_file_extensions
+    def set_included_extensions(self, included_file_extensions):
+        self._included_extensions = included_file_extensions
 
-    def getIncludedFileExtensions(self):
-        return self._includedFileExtensions
+    def set_excluded_extensions(self, excluded_file_extensions):
+        self._excluded_extensions = excluded_file_extensions
 
-    def setExcludedFileExtensions(self, excluded_file_extensions):
-        self._excludedFileExtensions = excluded_file_extensions
+    def set_excluded_regex(self, excluded_filters):
+        self._excluded_regex = excluded_filters
 
-    def getExcludedFileExtensions(self):
-        return self._excludedFileExtensions
+    def set_excluded_files(self, excluded_files):
+        self._excluded_files = excluded_files
 
-    def setExcludedFileRegex(self, excluded_filters):
-        self._excludedFileRegex = excluded_filters
+    def set_excluded_folders(self, excluded_folders):
+        self._excluded_folders = excluded_folders
 
-    def getExcludedFileRegex(self):
-        return self._excludedFileRegex
-
-    def setExcludedFiles(self, excluded_files):
-        self._excludedFiles = excluded_files
-
-    def getExcludedFiles(self):
-        return self._excludedFiles
-
-    def setDirContentAndTime(self, e):
-        self._dirContentAndTime[e] = os.path.getmtime(e)
-
-    def getDirContentAndTime(self):
-        return self._dirContentAndTime
-
-    def setExcludedFolders(self, excluded_folders):
-        self._excludedFolders = excluded_folders
-
-    def getExcludedFolders(self):
-        return self._excludedFolders
-
-    def isWatched(self, filepath):
+    # is_watched requires full relative filepath
+    def is_watched(self, filepath):
         watched = False
-        for ext in self._includedFileExtensions:
+        for ext in self._included_extensions:
             if filepath.endswith(ext):
                 watched = True
-        for ext in self._excludedFileExtensions:
+        for ext in self._excluded_extensions:
             if filepath.endswith(ext):
                 watched = False
-        for folder in self._excludedFolders:
+        for folder in self._excluded_folders:
             if folder in filepath:
                 watched = False
-        for fn in self._excludedFiles:
+        for fn in self._excluded_files:
             if fn in filepath:
                 watched = False
-        for regex in self._excludedFileRegex:
+        for regex in self._excluded_regex:
             if re.findall(regex, filepath):
                 watched = False
         return watched
+
+    def get_watched(self):
+        all_files = glob('**', recursive=True)
+        elements = [f for f in all_files if self.is_watched(f)]
+        return elements
 
 
 def getext(filename):
@@ -199,35 +184,6 @@ def get_now():
     return datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S")
 
 
-def getDirectoryWatchedElements():
-    config = Configuration.Instance()
-    elements = []
-    included_extensions = config.getIncludedFileExtensions()
-    excluded_regex = config.getExcludedFileRegex()
-    if included_extensions:
-        for extension in included_extensions:
-            if extension.startswith('.'):
-                elements += glob('*' + extension)
-                elements += glob('*/*' + extension)
-            else:
-                elements += glob('*.' + extension)
-                elements += glob('*/*' + extension)
-    else:
-        for path in os.listdir(os.getcwd()):
-            path_to_remove = False
-            for extension in config.getExcludedFileExtensions():
-                if path.endswith(extension):
-                    path_to_remove = True
-                    break
-            if not path_to_remove and path not in config.getExcludedFolders():
-                elements.append((path, os.stat(path).st_mtime))
-    filtered = []
-    for e in elements:
-        if not reduce(lambda x, y: x or y, [re.findall(r, e) for r in excluded_regex]):
-            filtered.append(e)
-    return filtered
-
-
 # Only markdown files are watched and supported for now
 def recompile(md_file):
     print("Compiling " + md_file)
@@ -235,9 +191,9 @@ def recompile(md_file):
     assert md_file.endswith('.md')
 
     config = Configuration.Instance()
-    commands = config.getCommands(md_file)
+    commands = config.get_commands(md_file)
 
-    for command in commands:
+    def exec_command(command):
         print("Updating the output at %s" % get_now(), file=sys.stderr)
         print("executing command : " + command)
         os.chdir(os.path.abspath(os.getcwd()))
@@ -248,6 +204,13 @@ def recompile(md_file):
         except subprocess.CalledProcessError as err:
             print("Error : " + err.output.decode('utf-8'))
 
+    # commands's entities are either strings or lists of strings
+    for command in commands:
+        if isinstance(command, str):
+            exec_command(command)
+        elif isinstance(command, list):
+            for com in command:
+                exec_command(com)
 
 class ChangeHandler(FileSystemEventHandler):
     # def __init__(self, server_process):
@@ -255,34 +218,26 @@ class ChangeHandler(FileSystemEventHandler):
     #     print(self.server_process)
     #     self.config = Configuration.Instance()
 
-    def __init__(self):
+    def __init__(self, root='.'):
+        self.root = root
         self.config = Configuration.Instance()
 
-    def on_any_event(self, event):
-        print(str(event))
+    # def on_any_event(self, event):
+    #     print(str(event))
 
     def on_created(self, event):
-        pwd = os.path.abspath('.') + '/'
+        # Should be root instead of '.'
+        pwd = os.path.abspath(self.root) + '/'
         filepath = str(event.src_path)
         assert pwd in filepath
         filepath = filepath.replace(pwd, '')
-        watched = self.config.isWatched(filepath)
+        watched = self.config.is_watched(filepath)
         if watched:
-            self.config.setDirContentAndTime(filepath)
             self.compile_stuff(filepath)
 
     def on_modified(self, event):
-        print("modified")
-        dir_content = self.config.getDirContentAndTime()
-        # serching for existing file that has been modified
-        for e, t in dir_content.items():
-            if os.path.getmtime(e) > t:
-                print("File " + e + " has changed")
-                self.config.setDirContentAndTime(e)
-                self.compile_stuff(e)
-        # if not found:
-        #     print("Something else changed. Not compiling")
-        # recompile()
+        print("file " + event.src_path + " modified")
+        self.compile_stuff(event.src_path)
 
     def compile_stuff(self, e):
         md_files = self.get_md_files(e)
@@ -290,13 +245,14 @@ class ChangeHandler(FileSystemEventHandler):
         # Though assumption is actually valid as there's only a
         # single file at a time which is checked
         if md_files and type(md_files) == str:
-            print(md_files)
+            print("compiling" + str(md_files))
             recompile(md_files)
         elif type(md_files) == list:
             for md_file in md_files:
-                print(md_file)
+                print("compiling" + str(md_file))
                 recompile(md_file)
         print("Done")
+
         # out, err = self.server_process.communicate()
         # if err:
         #     print("Error occured\n\n", err.decode('utf-8').split('\n'))
@@ -308,9 +264,9 @@ class ChangeHandler(FileSystemEventHandler):
         if e.endswith('.md'):
             return e
         elif e.endswith('template'):
-            print(e)
+            print("template" + e)
             md_files = []
-            elements = getDirectoryWatchedElements()
+            elements = self.config.get_watched()
             elements = [elem for elem in elements if elem.endswith('.md')]
             for elem in elements:
                 with open(elem, 'r') as f:
@@ -353,36 +309,47 @@ def parseOptions():
         "-g", "--generation", dest="generation",
         default="blog", required=False,
         help="Which formats to output. Can be blog,pdf,reveal,beamer")
+    # parser.add_argument(
+    #     "--live-server", dest="live_server",
+    #     type=bool, default=True, required=False,
+    #     help="Start a live server? Requires live-server to be installed\
+    #     in the node global namespace")
+    parser.add_argument(
+        "--live-server", dest="live_server",
+        action='store_true',
+        help="Start a live server? Requires live-server to be installed\
+        in the nodejs global namespace")
     args = parser.parse_known_args()
 
     config = Configuration.Instance()
 
+    if args[0].live_server:
+        config.live_server = True
+    else:
+        config.live_server = False
+
     # since it assumes that extensions startwith '.', I'll remove
     # the check from the globber later
     if args[0].exclude_filters:
-        print(str(args[0].exclude_filters.split(',')))
-        config.setExcludedFileRegex(args[0].exclude_filters.split(','))
+        print("Excluding files for given filters",
+              str(args[0].exclude_filters.split(',')))
+        config.set_excluded_regex(args[0].exclude_filters.split(','))
     if args[0].inclusions:
         inclusions = args[0].inclusions
         inclusions = inclusions.split(",")
-        config.setIncludedFileExtensions(
+        config.set_included_extensions(
             [value for value in inclusions if value.startswith(".")])
         if args[0].excluded_files:
             for ef in args[0].excluded_files.split(','):
                 assert type(ef) == str
-            config.setExcludedFiles(args.excluded_files.split(','))
-    elif args[0].exclusions:
+            config.set_excluded_files(args.excluded_files.split(','))
+    if args[0].exclusions:
         exclusions = args[0].exclusions
         exclusions = exclusions.split(",")
-        config.setExcludedFileExtensions(
-            [value for value in exclusions if value.startswith(".")])
-        config.setExcludedFolders(
-            list(set(exclusions).symmetric_difference(
-                set(config.getExcludedFileExtensions()))))
-    elif args[0].inclusions and args[0].exclusions:
-        print("Can't have both inclusions and exclusions.\
-        The system will exit")
-        sys.exit(0)
+        excluded_extensions = [value for value in exclusions if value.startswith(".")]
+        excluded_folders = list(set(exclusions) - set(excluded_extensions))
+        config.set_excluded_extensions(excluded_extensions)
+        config.set_excluded_folders(excluded_folders)
 
     assert args[0].generation is not None
 
@@ -404,16 +371,17 @@ def main():
         print("pandoc executable must be in the path to be used by pandoc-watch!")
         exit()
 
-    config = Configuration.Instance()
     parseOptions()
+    config = Configuration.Instance()
 
-    watched_elements = getDirectoryWatchedElements()
+    watched_elements = config.get_watched()
     print("watching ", watched_elements)
-    for e in watched_elements:
-        config.setDirContentAndTime(e)
 
-    print("Starting pandoc watcher and the live server ...")
-    p = subprocess.Popen(['live-server', '--open=.'])
+    if config.live_server:
+        print("Starting pandoc watcher and the live server ...")
+        p = subprocess.Popen(['live-server', '--open=.'])
+    else:
+        print("Starting pandoc watcher only ...")
 
     event_handler = ChangeHandler()
     observer = Observer()
@@ -424,13 +392,13 @@ def main():
             time.sleep(1)
     except KeyboardInterrupt as err:
         print(str(err))
-        p.terminate()
+        if config.live_server:
+            p.terminate()
         observer.stop()
 
     # Code to recompile all the required files at startup not needed for now.
     # Though should include the code needed to compile all the
     # dependent files in a module later and not just templates.
-    # json.dump(config.getDirContentAndTime(), open('.watched_elements', 'w'))
     print("Stopping pandoc watcher ...")
     exit()
 
