@@ -1,4 +1,5 @@
 #! /usr/bin/env python3
+#
 # The file copied from https://raw.githubusercontent.com/dloureiro/pandoc-watch/master/pandocwatch.py
 # on Sun Jun 17 16:33:03 IST 2018
 # and modified for python3 usage and some other extra arguments by Akshay Badola <akshay.badola.cs@gmail.com>
@@ -6,10 +7,14 @@
 # process. A simple python httpserver can also be used instead of
 # that as the watcher is implemented already.
 
+# TODO: Issue warning when incompatible options are used --biblatex and pandoc-citeproc conflict e.g.
+
 import re
 import os
+# import ipdb
 import sys
 import time
+import yaml
 import subprocess
 import datetime
 import configparser
@@ -95,8 +100,11 @@ class Configuration:
         self._excluded_folders = []
         self._included_extensions = []
         self._excluded_files = []
+        out_string = str(subprocess.run("uname -a".split(), stdout=subprocess.PIPE).stdout).lower()
+        self.buntu = "buntu" in out_string
+        print(out_string, self.buntu)
 
-    def setGenerationOpts(self, filetypes, pandoc_options):
+    def set_generation_opts(self, filetypes, pandoc_options):
         self._filetypes = filetypes
         if pandoc_options:
             for section in filetypes:
@@ -107,21 +115,35 @@ class Configuration:
                     else:
                         self._conf[section][opt] = ''
 
-    # should be a better way to compile with pdflatex
+    # TODO: should be a better way to compile with pdflatex
+    # TODO: User defined options should override the default ones and the file ones
     def get_commands(self, filename):
         assert filename.endswith('.md')
         assert self._filetypes
-
+        with open(filename, 'r') as f:
+            in_file_pandoc_opts = yaml.load(f.read().split('---')[1])
         commands = []
         filename = filename.replace('.md', '')
         pdflatex = 'pdflatex  -file-line-error -output-directory '\
                    + filename + '_files' + ' -interaction=nonstopmode '\
-                   + '"\input"' + filename + '.tex'
+                   + '--synctex=1 ' + '"\input"' + filename + '.tex'
         for ft in self._filetypes:
             command = []
             for k, v in self._conf[ft].items():
-                if k.startswith('--'):
-                    command.append(k + '=' + v if v else k)
+                if k == '-V':
+                    split_vals = v.split(',')
+                    for val in split_vals:
+                        command.append('-V ' + val.strip())
+                elif k.startswith('--'):
+                    if k[2:] in in_file_pandoc_opts:
+                        if k[2:] == 'filter':
+                            command.append(k + '=' + v if v else k)
+                        command.append(k + '=' + in_file_pandoc_opts[k[2:]])
+                    else:
+                        if self.buntu:
+                            if k[2:] == "pdf-engine":
+                                k = "--latex-engine"
+                        command.append(k + '=' + v if v else k)
                 else:
                     if k == '-o':
                         command.append(k + ' ' + filename + '.' + v)
@@ -276,7 +298,7 @@ class ChangeHandler(FileSystemEventHandler):
             return md_files
 
 
-def parseOptions():
+def parse_options():
     pandoc_output = subprocess.Popen(
         ["pandoc", "--help"], stdout=subprocess.PIPE).communicate()[0]
     added_epilog = '\n'.join(pandoc_output.decode("utf-8").split("\n")[1:])
@@ -360,8 +382,8 @@ def parseOptions():
         assert arg.startswith('-')
         if arg.startswith('--'):
             assert '=' in arg
-
-    config.setGenerationOpts(args[0].generation.split(','), ' '.join(args[1]))
+    print("Will generate for %s" % args[0].generation.upper())
+    config.set_generation_opts(args[0].generation.split(','), ' '.join(args[1]))
 
 
 def main():
@@ -371,7 +393,7 @@ def main():
         print("pandoc executable must be in the path to be used by pandoc-watch!")
         exit()
 
-    parseOptions()
+    parse_options()
     config = Configuration.Instance()
 
     watched_elements = config.get_watched()
