@@ -8,9 +8,15 @@ $endif$
 $if(fonttheme)$
 \usefonttheme{$fonttheme$}
 $endif$
+\setbeamertemplate{navigation symbols}{}
+\setbeamertemplate{bibliography item}[text]
 \setbeamertemplate{caption}[numbered]
 \setbeamertemplate{caption label separator}{:}
 \setbeamercolor{caption name}{fg=normal text.fg}
+%% CUSTOM \usepackage bbm, tikz
+\usepackage{bbm}
+\usepackage{tikz}
+\usepackage{bookmark}
 \usepackage{amssymb,amsmath}
 \usepackage{ifxetex,ifluatex}
 \usepackage{fixltx2e} % provides \textsubscript
@@ -34,6 +40,12 @@ $endif$
     $endif$
   \fi
 \fi
+%% All these can only be used if biblatex is used instead of citeproc
+%% CUSTOM footfullcite
+% \let\oldfootnotesize\footnotesize
+% \renewcommand*{\footnotesize}{\oldfootnotesize\tiny}
+% \let\oldbibfont\bibfont
+% \renewcommand*{\bibfont\tiny}
 % use upquote if available, for straight quotes in verbatim environments
 \IfFileExists{upquote.sty}{\usepackage{upquote}}{}
 % use microtype if available
@@ -42,8 +54,9 @@ $if(natbib)$
 \usepackage{natbib}
 \bibliographystyle{plainnat}
 $endif$
+%% CUSTOM biblatex
 $if(biblatex)$
-\usepackage{biblatex}
+\usepackage[backref=true, backend=biber]{biblatex}
 $if(biblio-files)$
 \bibliography{$biblio-files$}
 $endif$
@@ -151,6 +164,21 @@ $if(toc)$
 $endif$
 $body$
 
+
+$if(biblatex)$
+\begin{frame}{natbib}
+  natbib is enabled
+\end{frame}
+$endif$
+
+
+$if(biblatex)$
+\begin{frame}{biblatex}
+  Biblatex is enabled
+\end{frame}
+$endif$
+
+
 $if(natbib)$
 $if(biblio-files)$
 $if(biblio-title)$
@@ -168,7 +196,7 @@ $endif$
 $endif$
 $if(biblatex)$
 \begin{frame}[allowframebreaks]{$biblio-title$}
-\printbibliography[heading=none]
+\printbibliography[heading=none, font=tiny]
 \end{frame}
 
 $endif$
