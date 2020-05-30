@@ -11,7 +11,6 @@
 
 import re
 import os
-# import ipdb
 import sys
 import time
 import yaml
@@ -42,7 +41,6 @@ def which(program):
             exe_file = os.path.join(path, program)
             if is_exe(exe_file):
                 return exe_file
-
     return None
 
 
@@ -88,7 +86,7 @@ class Singleton:
     def __instancecheck__(self, inst):
         return isinstance(inst, self._decorated)
 
-# What should configuration hold?
+# CHECK: What should configuration hold?
 @Singleton
 class Configuration:
     def __init__(self):
@@ -100,6 +98,21 @@ class Configuration:
         self._excluded_folders = []
         self._included_extensions = []
         self._excluded_files = []
+        # out_string = str(subprocess.run("uname -a".split(), stdout=subprocess.PIPE).stdout).lower()
+        # self.buntu = "buntu" in out_string
+        # print(out_string, self.buntu)
+
+    @property
+    def pandoc_path(self):
+        return self._pandoc_path
+
+    @pandoc_path.setter
+    def pandoc_path(self, x):
+        if os.path.exists(os.path.expanduser(x)):
+            self._pandoc_path = x
+        else:
+            print("Could not set pandoc path")
+            import ipdb; ipdb.set_trace()
 
     def set_generation_opts(self, filetypes, pandoc_options):
         self._filetypes = filetypes
@@ -137,13 +150,16 @@ class Configuration:
                             command.append(k + '=' + v if v else k)
                         command.append(k + '=' + in_file_pandoc_opts[k[2:]])
                     else:
+                        # if self.buntu:
+                        #     if k[2:] == "pdf-engine":
+                        #         k = "--latex-engine"
                         command.append(k + '=' + v if v else k)
                 else:
                     if k == '-o':
                         command.append(k + ' ' + filename + '.' + v)
                     else:
                         command.append(k + (' ' + v) if v else '')
-            command = 'pandoc ' + ' '.join(command) + ' ' + filename + '.md'
+            command = " ".join([self.pandoc_path, ' '.join(command), filename + '.md'])
             if ft == 'pdf':
                 command = [command, 'mkdir -p ' + filename + '_files']
                 command.append(pdflatex)
@@ -200,7 +216,7 @@ def get_now():
     return datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S")
 
 
-# Only markdown files are watched and supported for now
+# NOTE: Only markdown files are watched and supported for now
 def recompile(md_file):
     print("Compiling " + md_file)
     assert type(md_file) == str
@@ -292,9 +308,12 @@ class ChangeHandler(FileSystemEventHandler):
             return md_files
 
 
-def parse_options():
+def parse_options(pandoc_path=None):
+    if pandoc_path is None:
+        pandoc_path = "pandoc"
+    
     pandoc_output = subprocess.Popen(
-        ["pandoc", "--help"], stdout=subprocess.PIPE).communicate()[0]
+        [pandoc_path, "--help"], stdout=subprocess.PIPE).communicate()[0]
     added_epilog = '\n'.join(pandoc_output.decode("utf-8").split("\n")[1:])
     epilog = "------------------------------------------\
 \nPandoc standard options are: \n\n" + added_epilog
@@ -325,11 +344,15 @@ def parse_options():
         "-g", "--generation", dest="generation",
         default="blog", required=False,
         help="Which formats to output. Can be blog,pdf,reveal,beamer")
-    # parser.add_argument(
-    #     "--live-server", dest="live_server",
-    #     type=bool, default=True, required=False,
-    #     help="Start a live server? Requires live-server to be installed\
-    #     in the node global namespace")
+    parser.add_argument(
+        "--run-once", dest="run_once",
+        action="store_true",
+        help="Whether to generate without starting the watchdog for file changes")
+    parser.add_argument(
+        "--input-files", dest="input_files",
+        default="",
+        help="Comma separated list of input files. Required if \"--run-once\" is specified")
+    # TODO: use a simple flask server instead
     parser.add_argument(
         "--live-server", dest="live_server",
         action='store_true',
@@ -338,6 +361,8 @@ def parse_options():
     args = parser.parse_known_args()
 
     config = Configuration.Instance()
+    config.pandoc_path = pandoc_path
+    print(f"Pandoc path is {config.pandoc_path}")
 
     if args[0].live_server:
         config.live_server = True
@@ -378,45 +403,63 @@ def parse_options():
             assert '=' in arg
     print("Will generate for %s" % args[0].generation.upper())
     config.set_generation_opts(args[0].generation.split(','), ' '.join(args[1]))
+    if args[0].run_once:
+        return True, args[0].input_files.split(",")
+    else:
+        return False
 
 
+# FIXME: A bunch of this code is annoying. Gotta reformat
 def main():
-    pandoc_path = which("pandoc")
+    # pandoc_path = which("pandoc")
+    pandoc_path = os.path.expanduser("/usr/bin/pandoc")
 
-    if not pandoc_path:
+    if not os.path.exists(pandoc_path):
         print("pandoc executable must be in the path to be used by pandoc-watch!")
         exit()
 
-    parse_options()
+    run_once, input_files = parse_options(pandoc_path)
     config = Configuration.Instance()
 
-    watched_elements = config.get_watched()
-    print("watching ", watched_elements)
-
-    if config.live_server:
-        print("Starting pandoc watcher and the live server ...")
-        p = subprocess.Popen(['live-server', '--open=.'])
+    if run_once:
+        # NOTE: Remove null strings
+        input_files = [*filter(None, input_files)]
+        if not input_files:
+            print("Error! No input files given")
+        else:
+            # run for only the given files
+            raise NotImplementedError
     else:
-        print("Starting pandoc watcher only ...")
+        watched_elements = config.get_watched()
+        print("watching ", watched_elements)
 
-    event_handler = ChangeHandler()
-    observer = Observer()
-    observer.schedule(event_handler, os.getcwd(), recursive=True)
-    observer.start()
-    try:
-        while True:
-            time.sleep(1)
-    except KeyboardInterrupt as err:
-        print(str(err))
         if config.live_server:
-            p.terminate()
-        observer.stop()
+            # print("Starting pandoc watcher and the live server ...")
+            # p = subprocess.Popen(['live-server', '--open=.'])
+            # NOTE: Have to switch to Flask
+            raise NotImplementedError
+        else:
+            print("Starting pandoc watcher only ...")
 
-    # Code to recompile all the required files at startup not needed for now.
-    # Though should include the code needed to compile all the
-    # dependent files in a module later and not just templates.
-    print("Stopping pandoc watcher ...")
-    exit()
+        event_handler = ChangeHandler()
+        observer = Observer()
+        observer.schedule(event_handler, os.getcwd(), recursive=True)
+        observer.start()
+        try:
+            while True:
+                time.sleep(1)
+        except KeyboardInterrupt as err:
+            print(str(err))
+            # NOTE: Have to switch to Flask
+            # if config.live_server:
+            #     p.terminate()
+            observer.stop()
+
+        # Code to recompile all the required files at startup not needed for now.
+        # Though should include the code needed to compile all the
+        # dependent files in a module later and not just templates.
+        print("Stopping pandoc watcher ...")
+        exit()
 
 
 if __name__ == '__main__':
