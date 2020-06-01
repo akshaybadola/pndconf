@@ -28,7 +28,8 @@ body {
 }
 
 .main.parent.content{
-    overflow-y: scroll;
+    scroll-behavior: auto;
+    overflow-y: auto;
     height: auto;
     max-height: 78%;
 }

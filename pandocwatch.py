@@ -68,6 +68,7 @@ class Configuration:
             self._pandoc_path = pandoc_path
             print(f"Pandoc path is {pandoc_path}")
         self._config_file = config_file
+        self.live_server = live_server
         self._conf = configparser.ConfigParser()
         self._conf.optionxform = str
         self._conf.read(self._config_file)
@@ -222,13 +223,13 @@ def recompile(commands, md_file: str) -> None:  # FIXME: Actually it's a path
             output = exec_command(command)
             if output:
                 # mark output for processing
-                postprocess.append({"file": md_file, "out_file": out_file})
+                postprocess.append({"in_file": md_file, "out_file": out_file})
         elif isinstance(command, list):
             outputs = []
             for com in command:
                 outputs.append(exec_command(com))
             if all(outputs):
-                postprocess.append({"file": md_file, "out_file": out_file})
+                postprocess.append({"in_file": md_file, "out_file": out_file})
     return postprocess
 
 
@@ -239,10 +240,12 @@ class ChangeHandler(FileSystemEventHandler):
         if postproc_module:
             try:
                 self.post_processor = load_user_module(postproc_module).post_processor
+                print(f"Post Processor module {postproc_module} successfully loaded")
             except Exception as e:
                 print(f"Error occured while loading module {postproc_module}, {e}")
                 self.post_processor = None
         else:
+            print(f"No Post Processor module given")
             self.post_processor = None
 
     # def on_any_event(self, event):
@@ -277,7 +280,7 @@ class ChangeHandler(FileSystemEventHandler):
                 commands = self.config.get_commands(md_file)
                 print("compiling" + str(md_file))
                 post.append(recompile(commands, md_file))
-        if self.post_processor:
+        if self.post_processor and post:
             print("Calling post_processor")
             self.post_processor(post)
         print("Done")
@@ -389,6 +392,8 @@ def parse_options(pandoc_path=None):
             assert '=' in arg
     print("Will generate for %s" % args[0].generation.upper())
     config.set_generation_opts(args[0].generation.split(','), ' '.join(args[1]))
+    # NOTE: should it be like this?
+    config.post_processor = args[0].post_processor
     if args[0].run_once:
         return config, True, args[0].input_files.split(",")
     else:
@@ -421,7 +426,7 @@ def main():
             raise NotImplementedError
         else:
             print("Starting pandoc watcher only ...")
-        event_handler = ChangeHandler(config)
+        event_handler = ChangeHandler(config, postproc_module=config.post_processor)
         observer = Observer()
         observer.schedule(event_handler, os.getcwd(), recursive=True)
         observer.start()
