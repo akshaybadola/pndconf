@@ -15,7 +15,7 @@ body {
     position: fixed;
     top: 0px;
     height: 100px;
-    box-shadow: 10px 10px 10px 0px black;
+    box-shadow: 8px 8px 8px 0px black;
 }
 
 .main.parent{
@@ -24,7 +24,7 @@ body {
     position: fixed;
     left: 20.5%;
     top: 120px;
-    box-shadow: 10px 10px 10px 0px black;
+    box-shadow: 8px 8px 8px 0px black;
 }
 
 .main.parent.content{
@@ -32,6 +32,28 @@ body {
     overflow-y: auto;
     height: auto;
     max-height: 78%;
+}
+
+.main.parent.content.snippet{
+    padding-top: 10px;
+    padding-bottom: 10px;
+    background-color: #ffffec;
+    box-shadow: 4px 4px 4px 0px darkgrey;
+    position: relative;
+    width: auto;
+    left: 1%;
+    margin-top: 1%;
+    top: 1%;
+    border-radius: 10px;
+}
+
+/* NOTE: curiously only [span a] is modified with the current style*/
+.main.parent.content.snippet span a{
+    text-decoration: none;
+    color: inherit;
+}
+.main.parent.content.snippet a{
+    text-decoration: none;
 }
 /* I don't think I want everything sticky now */
 /* .row.banner{ */
@@ -59,7 +81,7 @@ h1.title {
 
 .row-fluid [class*="span"]
 {
-    box-shadow: 10px 10px 10px 0px black;
+    box-shadow: 8px 8px 8px 0px black;
 }
 
 .row-fluid [class*="span"] h1
@@ -94,13 +116,13 @@ h1.title {
 .menu-container {
     width: 19%;
     max-height: 78%;
-    margin-left: 10px;
+    margin-left: 1%;
     position: fixed;
     left: 0px;
     top: 120px;
     overflow-y: auto;
     background-color: white;    
-    box-shadow: 10px 10px 10px 0px black;
+    box-shadow: 8px 8px 8px 0px black;
 }
 
 /* The contents for the menu.
