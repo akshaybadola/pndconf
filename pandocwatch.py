@@ -27,6 +27,7 @@ import time
 import yaml
 import shlex
 import pprint
+import chardet
 from subprocess import Popen, PIPE
 import datetime
 import configparser
@@ -86,6 +87,70 @@ def load_user_module(modname):
     return mod
 
 
+class TexCompiler:
+    def __init__(self):
+        self.log_file_encoding = "ISO-8859-1"
+
+    def compile(self, command):
+        p = Popen(command, stdout=PIPE, stderr=PIPE, shell=True)
+        output = p.communicate()
+        out = output[0].decode("utf-8")
+        # err = output[1].decode("utf-8")
+        opts = re.split(r'\s+', command)
+        ind = [i for i, x in enumerate(opts) if "output-directory" in x]
+        if ind:
+            ind = ind[0]
+        else:
+            ind = None
+        paras = out.split("\n\n")
+        warnings = [x.replace("Warning", COLORS.ALT_RED + "Warning" + COLORS.ENDC)
+                    for x in paras if "Warning" in x]
+        errors = [x.replace("Error", COLORS.BRIGHT_RED + "Error" + COLORS.ENDC).
+                  replace("error", COLORS.BRIGHT_RED + "error" + COLORS.ENDC)
+                  for x in paras if "Error" in x or "error" in x]
+        fatal = [x.replace("Fatal", COLORS.BRIGHT_RED + "Fatal" + COLORS.ENDC).
+                 replace("fatal", COLORS.BRIGHT_RED + "fatal" + COLORS.ENDC)
+                 for x in paras if "fatal" in x.lower()]
+        if fatal:
+            print(f"pdftex {COLORS.BRIGHT_RED}fatal error{COLORS.ENDC}:")
+            for i, x in enumerate(errors):
+                x = x.replace("\n", "\n\t")
+                print(f"{i+1}. \t{x}")
+            return False
+        if ind is not None:
+            log_file_name = os.path.basename(opts[-1]).replace(".tex", ".log").strip()
+            log_file = os.path.join(opts[ind+1].strip(), log_file_name)
+            with open(log_file, "rb") as f:
+                log_bytes = f.read()
+            try:
+                log_text = log_bytes.decode(self.log_file_encoding).split("\n\n")
+            except UnicodeDecodeError as e:
+                print(f"UTF codec failed for log_file {log_file}. Error {e}")
+                self.log_file_encoding = chardet.detect(log_bytes)["encoding"]
+                print(f"Opening with new codec {self.log_file_encoding}")
+                log_text = log_bytes.decode(self.log_file_encoding, "ignore")
+            warnings.extend([re.split(r'(\n\s+\n)', x)[0].
+                             replace("Undefined",
+                                     COLORS.ALT_RED +
+                                     "Undefined" +
+                                     COLORS.ENDC).replace("undefined",
+                                                          COLORS.ALT_RED +
+                                                          "undefined" +
+                                                          COLORS.ENDC)
+                             for x in log_text if "undefined" in x.lower()])
+        if errors:
+            print("pdftex errors:")
+            for i, x in enumerate(errors):
+                x = x.replace("\n", "\n\t")
+                print(f"{i+1}. \t{x}")
+        if warnings:
+            print("pdftex warnings:")
+            for i, x in enumerate(warnings):
+                x = x.replace("\n", "\n\t")
+                print(f"{i+1}. \t{x}")
+        return True
+
+
 # CHECK: What should configuration hold?
 #
 # TODO: Pandoc input and output processing should be with a better helper and
@@ -117,11 +182,11 @@ class Configuration:
             print(f"Could not set new pandoc path {x}")
 
     @property
-    def debug_level(self):
+    def log_level(self):
         return self._debug_level
 
-    @debug_level.setter
-    def debug_level(self, x):
+    @log_level.setter
+    def log_level(self, x):
         if x in [0, 1, 2, 3]:
             self._debug_level = x
         elif x in self._debug_levels:
@@ -149,8 +214,12 @@ class Configuration:
     def get_commands(self, filename: str) -> Dict[str, Dict[str, str]]:
         assert filename.endswith('.md')
         assert self._filetypes
-        with open(filename, 'r') as f:
-            in_file_pandoc_opts = yaml.load(f.read().split('---')[1], Loader=yaml.FullLoader)
+        try:
+            with open(filename, 'r') as f:
+                in_file_pandoc_opts = yaml.load(f.read().split('---')[1], Loader=yaml.FullLoader)
+        except Exception as e:
+            print(f"Yaml parse error {e}. Will not compile.")
+            return None
         commands = {}
         filename = filename.replace('.md', '')
         pdflatex = 'pdflatex  -file-line-error -output-directory '\
@@ -242,17 +311,19 @@ def compile_files(md_files, config):
     post_processor = config.post_processor
     post = []
     if md_files and isinstance(md_files, str):
-        if config.debug_level > 2:
+        if config.log_level > 2:
             print(f"{COLORS.BLUE}Compiling{COLORS.ENDC}: {md_files}")
         commands = config.get_commands(md_files)
-        post.append(recompile(commands, md_files))
+        if commands is not None:
+            post.append(markdown_compile(commands, md_files))
     elif isinstance(md_files, list):
         for md_file in md_files:
             commands = config.get_commands(md_file)
-            if config.debug_level > 2:
+            if config.log_level > 2:
                 print(f"{COLORS.BLUE}Compiling{COLORS.ENDC}: {md_file}")
-            post.append(recompile(commands, md_file))
-    if post_processor and post:
+            if commands is not None:
+                post.append(markdown_compile(commands, md_file))
+    if commands and post_processor and post:
         print("Calling post_processor")
         post_processor(post)
 
@@ -286,8 +357,15 @@ def exec_tex_compile(command):
     if ind is not None:
         log_file_name = os.path.basename(opts[-1]).replace(".tex", ".log").strip()
         log_file = os.path.join(opts[ind+1].strip(), log_file_name)
-        with open(log_file) as f:
-            log_text = f.read().split("\n\n")
+        with open(log_file, "rb") as f:
+            log_bytes = f.read()
+        try:
+            log_text = log_bytes.decode("utf-8").split("\n\n")
+        except UnicodeDecodeError as e:
+            print(f"UTF codec failed for log_file {log_file}. Error {e}")
+            encoding = chardet.detect(log_bytes)["encoding"]
+            print(f"Opening with codec {encoding}")
+            log_text = log_bytes.decode(encoding, "ignore")
         warnings.extend([re.split(r'(\n\s+\n)', x)[0].
                          replace("Undefined",
                                  COLORS.ALT_RED +
@@ -309,12 +387,19 @@ def exec_tex_compile(command):
             print(f"{i+1}. \t{x}")
     return True
 
-
+# NOTE: I don't like global variables but it's ok for now
+tex_compiler = TexCompiler()
 def exec_command(command):
     print(f"Executing command : {command}")
     os.chdir(os.path.abspath(os.getcwd()))
     if command.startswith("pdflatex") or command.startswith("pdftex"):
-        return exec_tex_compile(command)
+        try:
+            # status = exec_tex_compile(command)
+            status = tex_compiler.compile(command)
+            return status
+        except Exception as e:
+            print(f"Error occured while compiling file {e}")
+            return False
     else:
         p = Popen(command, stdout=PIPE, stderr=PIPE, shell=True)
         output = p.communicate()
@@ -327,7 +412,8 @@ def exec_command(command):
                 print(f"Output from command: {out}")
             if err:
                 err = err.strip("\n")
-                print(f"No error from command, but: {COLORS.ALT_RED}{err}{COLORS.ENDC}")
+                err = "\n".join([f"\t{e}" for e in err.split("\n")])
+                print(f"No error from command, but: {COLORS.ALT_RED}\n{err}{COLORS.ENDC}")
             return True
         else:
             print(f"Error occured : {err}")
@@ -335,7 +421,7 @@ def exec_command(command):
 
 
 # NOTE: Only markdown files are watched and supported for now
-def recompile(commands, md_file: str) -> None:  # FIXME: Actually it's a path
+def markdown_compile(commands, md_file: str) -> None:  # FIXME: Actually it's a path
     if not isinstance(md_file, str) or not md_file.endswith('.md'):
         print(f"Not markdown file {md_file}")
         return
@@ -393,10 +479,10 @@ class ChangeHandler(FileSystemEventHandler):
 
     def on_modified(self, event):
         "Event fired when a file is modified"
-        if self.config.debug_level > 2:
+        if self.config.log_level > 2:
             print("File " + event.src_path + " modified")
         md_files = self.get_md_files(event.src_path)
-        if self.config.debug_level > 2:
+        if self.config.log_level > 2:
             print(f"DEBUG: {md_files}")
         if md_files:
             self.compile_stuff(md_files)
@@ -485,7 +571,12 @@ def parse_options():
         action="store_true",
         help="Print pandoc options and exit")
     parser.add_argument(
-        "-d", "--debug-level", dest="debug_level",
+        "-L", "--log-file", dest="log_file",
+        type=str,
+        default="",
+        help="Log file to output instead of stdout. Optional")
+    parser.add_argument(
+        "-l", "--log-level", dest="log_level",
         default="warning",
         help="Debug Level. One of: error, warning, info, debug")
     args = parser.parse_known_args()
@@ -536,8 +627,8 @@ def parse_options():
         config.set_excluded_folders(excluded_folders)
     assert args[0].generation is not None
 
-    config.debug_level = args[0].debug_level
-    if config.debug_level > 2:
+    config.log_level = args[0].log_level
+    if config.log_level > 2:
         print("\n".join(out.split("\n")[:3]))
         print("-" * len(out.split("\n")[2]))
 
@@ -600,7 +691,7 @@ def main():
             #     p.terminate()
             observer.stop()
 
-        # Code to recompile all the required files at startup not needed for now.
+        # Code to compile all the required files at startup not needed for now.
         # Though should include the code needed to compile all the
         # dependent files in a module later and not just templates.
         print("Stopping pandoc watcher ...")
