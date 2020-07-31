@@ -1,6 +1,7 @@
-# pypanprocess
+# pandocwatch
 Automatic conversion of markdown to various formats with pre defined settings via templates and folder watch with preview
-**The code is highly nascent and I wouldn't even call it alpha at this stage**
+~~**The code is highly nascent and I wouldn't even call it alpha at this stage**~~
+**It's quite usable now, but I haven't added docs or tests. Will do soon**
 
 --------
 
@@ -18,7 +19,3 @@ The templates in the settings/templates directory are derived from the repositor
 - charts.js file in settings should be replaced with the correct file.
 - `csl` files, according to the styles required should be procured and put in the settings/csl directory.
 - See `pandocwatch --help` for a list of options.
-- Requires `live-server` from `nodejs` for automatic reloading of the current directory in the browser.
-- Basically `live-server` injects js code which refreshes the page automatically.
-- Will add more options and explanations later, with perhaps a python based version of `live-server` as it shouldn't be too difficult to implement.
-- **Still need to fix the paths so there may be issues right now**
