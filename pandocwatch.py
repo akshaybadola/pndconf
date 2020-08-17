@@ -34,8 +34,7 @@ from glob import glob
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 
-from util import which, load_user_module
-from colors import COLORS
+from util import which, load_user_module, logd, loge, logi, logbi, logw
 from compilers import markdown_compile
 
 
@@ -77,10 +76,10 @@ class ChangeHandler(FileSystemEventHandler):
     def on_modified(self, event):
         "Event fired when a file is modified"
         if self.log_level > 2:
-            print("File " + event.src_path + " modified")
+            logd("File " + event.src_path + " modified")
         md_files = self.get_md_files(event.src_path)
         if self.log_level > 2:
-            print(f"DEBUG: {md_files}")
+            logd(f"DEBUG: {md_files}")
         if md_files:
             self.compile_stuff(md_files)
 
@@ -92,7 +91,7 @@ class ChangeHandler(FileSystemEventHandler):
         # Though assumption is actually valid as there's only a
         # single file at a time which is checked
         self.compile_files(md_files)
-        print("Done\n")
+        logbi("Done\n")
 
     # CHECK: If it's working correctly
     def get_md_files(self, e):
@@ -100,7 +99,7 @@ class ChangeHandler(FileSystemEventHandler):
         if e.endswith('.md'):
             return e
         elif e.endswith('template'):
-            print("template" + e)
+            logd("template" + e)
             md_files = []
             elements = self.get_watched()
             elements = [elem for elem in elements if elem.endswith('.md')]
@@ -119,9 +118,9 @@ class ChangeHandler(FileSystemEventHandler):
 class Configuration:
     def __init__(self, watch_dir, output_dir, config_file="config.ini",
                  pandoc_path=None, post_processor=None, live_server=False):
-        self._watch_dir = watch_dir
-        self._output_dir = output_dir
-        self._pandoc_path = pandoc_path
+        self.watch_dir = watch_dir
+        self.output_dir = output_dir
+        self.pandoc_path = pandoc_path
         self._config_file = config_file
         self._post_processor = post_processor
         self.live_server = live_server
@@ -148,24 +147,13 @@ class Configuration:
             try:
                 # NOTE: Must contain symbol post_processor
                 self.post_processor = load_user_module(postproc_module).post_processor
-                print(f"Post Processor module {postproc_module} successfully loaded")
+                loge(f"Post Processor module {postproc_module} successfully loaded")
             except Exception as e:
-                print(f"Error occured while loading module {postproc_module}, {e}")
+                loge(f"Error occured while loading module {postproc_module}, {e}")
                 self.post_processor = None
         else:
-            print(f"No Post Processor module given")
+            self.logw(f"No Post Processor module given")
             self.post_processor = None
-
-    @property
-    def output_dir(self):
-        return self._output_dir
-
-    @output_dir.setter
-    def output_dir(self, x):
-        if os.path.exists(os.path.expanduser(x)):
-            self._pandoc_path = x
-        else:
-            print(f"Could not set output_dir {x}. Directory doesn't exist")
 
     @property
     def watch_dir(self):
@@ -174,9 +162,21 @@ class Configuration:
     @watch_dir.setter
     def watch_dir(self, x):
         if os.path.exists(os.path.expanduser(x)):
-            self._pandoc_path = x
+            self._watch_dir = os.path.expanduser(x)
         else:
-            print(f"Could not set watch_dir {x}. Directory doesn't exist")
+            loge(f"Could not set watch_dir {x}. Directory doesn't exist")
+
+    @property
+    def output_dir(self):
+        return self._output_dir
+
+    @output_dir.setter
+    def output_dir(self, x):
+        x = os.path.expanduser(x)
+        if not os.path.exists(x):
+            os.makedirs(x)
+            logbi(f"Directory didn't exist. Created {x}.")
+        self._output_dir = x
 
     @property
     def pandoc_path(self):
@@ -185,9 +185,9 @@ class Configuration:
     @pandoc_path.setter
     def pandoc_path(self, x):
         if os.path.exists(os.path.expanduser(x)):
-            self._pandoc_path = x
+            self._pandoc_path = os.path.expanduser(x)
         else:
-            print(f"Could not set new pandoc path {x}")
+            loge(f"Could not set new pandoc path {x}. File doesn't exist.")
 
     @property
     def log_level(self):
@@ -219,20 +219,23 @@ class Configuration:
 
     # TODO: should be a better way to compile with pdflatex
     # TODO: User defined options should override the default ones and the file ones
-    def get_commands(self, filename: str) -> Dict[str, Dict[str, str]]:
-        assert filename.endswith('.md')
-        assert self._filetypes
+    def get_commands(self, in_file: str) -> Dict[str, Dict[str, str]]:
+        # TODO: The following should be replaced with separate tests
+        # assert in_file.endswith('.md')
+        # assert self._filetypes
         try:
-            with open(filename, 'r') as f:
+            with open(in_file, 'r') as f:
                 in_file_pandoc_opts = yaml.load(f.read().split('---')[1], Loader=yaml.FullLoader)
         except Exception as e:
-            print(f"Yaml parse error {e}. Will not compile.")
+            loge(f"Yaml parse error {e}. Will not compile.")
             return None
         commands = {}
-        filename = filename.replace('.md', '')
+        filename_no_ext = os.path.splitext(os.path.basename(in_file))[0]
+        out_path_no_ext = os.path.join(self.output_dir, filename_no_ext)
         pdflatex = 'pdflatex  -file-line-error -output-directory '\
-                   + filename + '_files' + ' -interaction=nonstopmode '\
-                   + '--synctex=1 ' + filename + '.tex'
+                   + out_path_no_ext + '_files'\
+                   + ' -interaction=nonstopmode '\
+                   + '--synctex=1 ' + out_path_no_ext + '.tex'
         for ft in self._filetypes:
             command = []
             for k, v in self._conf[ft].items():
@@ -246,21 +249,18 @@ class Configuration:
                             command.append(k + '=' + v if v else k)
                         command.append(k + '=' + in_file_pandoc_opts[k[2:]])
                     else:
-                        # if self.buntu:
-                        #     if k[2:] == "pdf-engine":
-                        #         k = "--latex-engine"
                         command.append(k + '=' + v if v else k)
                 else:
                     if k == '-o':
-                        out_file = filename + '.' + v
-                        command.append(k + ' ' + filename + '.' + v)
+                        out_file = out_path_no_ext + "." + v
+                        command.append(k + ' ' + out_file)
                     else:
                         command.append(k + (' ' + v) if v else '')
-            command = " ".join([self.pandoc_path, ' '.join(command), filename + '.md'])
+            command = " ".join([self.pandoc_path, ' '.join(command), in_file])
             if ft == 'pdf':
-                command = [command, 'mkdir -p ' + filename + '_files']
+                command = [command, 'mkdir -p ' + out_path_no_ext + "_files"]
                 command.append(pdflatex)
-                out_file = filename + "_files" + filename + ".pdf"
+                out_file = os.path.join(out_path_no_ext + '_files', filename_no_ext + ".pdf")
             commands[ft] = {"command": command, "out_file": out_file}
         return commands
 
@@ -301,7 +301,7 @@ class Configuration:
 
     # CHECK: Should be cached maybe?
     def get_watched(self):
-        all_files = glob(os.path.join(self._watch_dir, '**'), recursive=True)
+        all_files = glob(os.path.join(self.watch_dir, '**'), recursive=True)
         elements = [f for f in all_files if self.is_watched(f)]
         return elements
 
@@ -312,7 +312,7 @@ class Configuration:
         post = []
         if md_files and isinstance(md_files, str):
             if self.log_level > 2:
-                print(f"{COLORS.BLUE}Compiling{COLORS.ENDC}: {md_files}")
+                logbi(f"Compiling: {md_files}")
             commands = self.get_commands(md_files)
             if commands is not None:
                 post.append(markdown_compile(commands, md_files))
@@ -320,11 +320,11 @@ class Configuration:
             for md_file in md_files:
                 commands = self.get_commands(md_file)
                 if self.log_level > 2:
-                    print(f"{COLORS.BLUE}Compiling{COLORS.ENDC}: {md_file}")
+                    logbi(f"Compiling: {md_file}")
                 if commands is not None:
                     post.append(markdown_compile(commands, md_file))
         if commands and self.post_processor and post:
-            print("Calling post_processor")
+            logbi("Calling post_processor")
             self.post_processor(post)
 
 
@@ -337,10 +337,10 @@ def parse_options():
         required=False,
         help="Provide custom pandoc path. Must be full path to executable")
     parser.add_argument(
-        "--watch-dir", "-d", dest="watch_dir", default=".",
+        "-d", "--watch-dir", dest="watch_dir", default=".",
         help="Directory where to watch files. Defaults to current directory")
     parser.add_argument(
-        "--output-dir", "-o", dest="output_dir", default=".",
+        "-o", "--output-dir", dest="output_dir", default=".",
         help="Directory for output files. Defaults to current directory")
     parser.add_argument(
         "-e", "--exclude", dest="exclusions",
@@ -405,20 +405,20 @@ def parse_options():
     else:
         pandoc_path = which("pandoc")
     if not os.path.exists(pandoc_path):
-        print("pandoc executable not available. Exiting!")
+        loge("pandoc executable not available. Exiting!")
         exit(1)
     if args[0].print_pandoc_opts:
         out, err = Popen([pandoc_path, "--help"], stdout=PIPE, stderr=PIPE).communicate()
         out = out.decode("utf-8")
         err = err.decode("utf-8")
         if err:
-            print(f"Pandoc exited with error {err}")
+            loge(f"Pandoc exited with error {err}")
         else:
-            print(f"Pandoc options are \n{out}")
+            loge(f"Pandoc options are \n{out}")
         exit(0)
     out = Popen(shlex.split(f"{pandoc_path} --version"), stdout=PIPE).\
         communicate()[0].decode("utf-8")
-    print(f"Pandoc path is {pandoc_path}")
+    logi(f"Pandoc path is {pandoc_path}")
     if args[0].live_server:
         raise NotImplementedError
     config = Configuration(args[0].watch_dir, args[0].output_dir,
@@ -428,8 +428,8 @@ def parse_options():
                            live_server=args[0].live_server)
     # NOTE: The program assumes that extensions startwith '.'
     if args[0].exclude_filters:
-        print("Excluding files for given filters",
-              str(args[0].exclude_filters.split(',')))
+        logi("Excluding files for given filters",
+             str(args[0].exclude_filters.split(',')))
         config.set_excluded_regex(args[0].exclude_filters.split(','))
     if args[0].inclusions:
         inclusions = args[0].inclusions
@@ -451,11 +451,11 @@ def parse_options():
 
     config.log_level = args[0].log_level
     if config.log_level > 2:
-        print("\n".join(out.split("\n")[:3]))
-        print("-" * len(out.split("\n")[2]))
+        logi("\n".join(out.split("\n")[:3]))
+        logi("-" * len(out.split("\n")[2]))
     if args[0].log_file:
         config.log_file = args[0].log_file
-        print("Log file isn't implemented yet. Will output to stdout")
+        logw("Log file isn't implemented yet. Will output to stdout")
     # TODO: Need Better checks
     # NOTE: These options will override pandoc options in all the sections of
     #       the config file
@@ -463,9 +463,9 @@ def parse_options():
         assert arg.startswith('-')
         if arg.startswith('--'):
             assert '=' in arg
-    print(f"Will generate for {args[0].generation.upper()}")
+    logbi(f"Will generate for {args[0].generation.upper()}")
     config.set_generation_opts(args[0].generation.split(','), ' '.join(args[1]))
-    print(f"Generation options are \n{config.generation_opts}")
+    logi(f"Generation options are \n{config.generation_opts}")
     # NOTE: should it be like this?
     if args[0].run_once:
         return config, True, args[0].input_files.split(",")
@@ -481,27 +481,27 @@ def main():
         input_files = [*filter(None, input_files)]
         not_input_files = [x for x in input_files if not os.path.exists(x)]
         if not_input_files:
-            print(f"{not_input_files} don't exist. Ignoring")
+            loge(f"{not_input_files} don't exist. Ignoring")
         input_files = [x for x in input_files if os.path.exists(x)]
         if not input_files:
-            print("Error! No input files present or given")
+            loge("Error! No input files present or given")
         elif not all(x.endswith(".md") for x in input_files):
-            print("Error! Some input files not markdown")
+            loge("Error! Some input files not markdown")
         else:
-            print(f"Will compile {input_files} to {config.output_dir} once.")
+            logbi(f"Will compile {input_files} to {config.output_dir} once.")
             config.compile_files(input_files)
     else:
         watched_elements = config.get_watched()
-        print("watching ", [w.replace(config.watch_dir, "")
-                            for w in watched_elements])
-        print(f"Will output to {config.output_dir}")
+        logi("watching ", [w.replace(config.watch_dir, "")
+                           for w in watched_elements])
+        logi(f"Will output to {config.output_dir}")
         if config.live_server:
             # NOTE: Have to switch to Flask
             # print("Starting pandoc watcher and the live server ...")
             # p = Popen(['live-server', '--open=.'])
             raise NotImplementedError
         else:
-            print("Starting pandoc watcher only ...")
+            logi("Starting pandoc watcher only ...")
         event_handler = ChangeHandler(config.watch_dir, config.is_watched,
                                       config.get_watched, config.compile_files,
                                       config.log_level)
@@ -512,7 +512,7 @@ def main():
             while True:
                 time.sleep(1)
         except KeyboardInterrupt as err:
-            print(str(err))
+            logi(str(err))
             # NOTE: Have to switch to Flask
             # if config.live_server:
             #     p.terminate()
@@ -521,7 +521,7 @@ def main():
         # Code to compile all the required files at startup not needed for now.
         # Though should include the code needed to compile all the
         # dependent files in a module later and not just templates.
-        print("Stopping pandoc watcher ...")
+        logi("Stopping pandoc watcher ...")
         exit(0)
 
 

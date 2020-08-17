@@ -8,6 +8,7 @@ from util import get_now
 from colors import COLORS
 
 
+# FIXME: Use log* for logging
 class TexCompiler:
     def __init__(self):
         self.log_file_encoding = "ISO-8859-1"

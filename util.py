@@ -3,6 +3,8 @@ import sys
 import datetime
 import importlib
 
+from colors import COLORS
+
 
 def which(program):
     """
@@ -37,10 +39,35 @@ def load_user_module(modname):
     return mod
 
 
-def getext(filename):
-    "Get the file extension."
-    return os.path.splitext(filename)[-1].lower()
-
-
 def get_now():
     return datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S")
+
+
+def loge(message, newline=True):
+    "Log Error message"
+    end = "\n" if newline else ""
+    print(f"{COLORS.BRIGHT_RED}{message}{COLORS.ENDC}", end=end)
+
+
+def logw(message, newline=True):
+    "Log Warning message"
+    end = "\n" if newline else ""
+    print(f"{COLORS.ALT_RED}{message}{COLORS.ENDC}", end=end)
+
+
+def logd(message, newline=True):
+    "Log Debug message"
+    end = "\n" if newline else ""
+    print(message, end=end)
+
+
+def logi(message, newline=True):
+    "Log Info message"
+    end = "\n" if newline else ""
+    print(message, end=end)
+
+
+def logbi(message, newline=True):
+    "Log Info message"
+    end = "\n" if newline else ""
+    print(f"{COLORS.BLUE}{message}{COLORS.ENDC}", end=end)
