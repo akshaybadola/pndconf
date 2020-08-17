@@ -8,13 +8,13 @@
 # by Akshay Badola <akshay.badola.cs@gmail.com>
 # on "Monday 27 July 2020 17:49:47 IST"
 
-# Currently it also starts up a 'live-server' process which is a nodejs
-# process. A simple python httpserver can also be used instead of that as the
-# watcher is implemented already.
+# Actually from that point onward I've changed it a lot so it's a completely
+# different project now. Similar goals but different.
+# "Saturday 15 August 2020 19:06:58 IST"
 
 # TODO: Issue warning when incompatible options are used --biblatex and
-# pandoc-citeproc conflict e.g.
-#
+#       pandoc-citeproc conflict e.g.
+
 # NOTE: FOR BLOG GENERATION - tags, keywords, SEO
 # etc. should be updated from yaml in the markdown - if html has files it should
 # be filename_html_files and not filename_files perhaps update pdf generation
@@ -22,133 +22,94 @@
 
 import re
 import os
-import sys
 import time
 import yaml
 import shlex
 import pprint
-import chardet
 from subprocess import Popen, PIPE
-import datetime
 import configparser
 import argparse
-from typing import Dict, Union, List, Any
+from typing import Dict, Union, List
 from glob import glob
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
-import importlib.machinery
-import importlib.util
+
+from util import which, load_user_module
+from colors import COLORS
+from compilers import markdown_compile
 
 
-class COLORS:
-    RED = '\033[31m'
-    ALT_RED = '\033[91m'
-    BRIGHT_RED = '\033[1;31m'
-    ALT_BRIGHT_RED = '\033[1;91m'
-    YELLOW = '\033[33m'
-    BRIGHT_YELLOW = '\033[1;33m'
-    BLUE = '\033[34m'
-    BRIGHT_BLUE = '\033[1;34m'
-    ALT_BLUE = '\033[94m'
-    ALT_BRIGHT_BLUE = '\033[1;94m'
-    BOLD = '\033[1m'
-    UNDERLINE = '\033[4m'
-    ENDC = '\033[0m'
+# TODO: This should only check for change in md files and associated <!-- includes --> files
+#
+# CHECK: So I changed the ChangeHandler to be a bit more explicit but now I'm
+#        thinking how much this and Configuration are coupled.
+#        I can either:
+#        1. Merge them into a single class, but then Configuration will have to
+#        inherit from FileSystemEventHandler and maybe have to be renamed to
+#        PandocWatch
+#        2. Or I could make a separate Compiler (or Executor or Something) class
+#        which does what?
+class ChangeHandler(FileSystemEventHandler):
+    """ChangeHandler fires the commands corresnponding to the event and the
+    Configuration instance `config`"""
+    def __init__(self, root, is_watched, get_watched, compile_func, log_level):
+        self.root = root
+        self.is_watched = is_watched
+        self.get_watched = get_watched
+        self.compile_files = compile_func
+        self.log_level = log_level
 
+    # NOTE: DEBUG
+    # def on_any_event(self, event):
+    #     print(str(event))
 
-def which(program):
-    """
-    This function is taken from
-    http://stackoverflow.com/questions/377017/test-if-executable-exists-in-python
-    """
-    def is_exe(fpath):
-        return os.path.isfile(fpath) and os.access(fpath, os.X_OK)
-    fpath, fname = os.path.split(program)
-    if fpath:
-        if is_exe(program):
-            return program
-    else:
-        for path in os.environ["PATH"].split(os.pathsep):
-            path = path.strip('"')
-            exe_file = os.path.join(path, program)
-            if is_exe(exe_file):
-                return exe_file
-    return None
+    def on_created(self, event):
+        "Event fired when a new file is created"
+        pwd = os.path.abspath(self.root) + '/'
+        filepath = str(os.path.abspath(event.src_path))
+        assert pwd in filepath
+        filepath = filepath.replace(pwd, '')
+        watched = self.is_watched(filepath)
+        if watched:
+            md_files = self.get_md_files(filepath)
+            self.compile_stuff(md_files)
 
+    def on_modified(self, event):
+        "Event fired when a file is modified"
+        if self.log_level > 2:
+            print("File " + event.src_path + " modified")
+        md_files = self.get_md_files(event.src_path)
+        if self.log_level > 2:
+            print(f"DEBUG: {md_files}")
+        if md_files:
+            self.compile_stuff(md_files)
 
-# NOTE: A more generic implementation is in common_pyutil
-def load_user_module(modname):
-    spec = importlib.machinery.PathFinder.find_spec(modname)
-    if spec is None:
-        return None
-    mod = importlib.util.module_from_spec(spec)
-    sys.modules[modname] = mod
-    spec.loader.exec_module(mod)
-    return mod
+    # NOTE: Maybe rename this function
+    def compile_stuff(self, md_files: Union[str, List[str]]) -> None:
+        "Compile if required when an event is fired"
+        # NOTE:
+        # The assumption below should not be on the type of variable
+        # Though assumption is actually valid as there's only a
+        # single file at a time which is checked
+        self.compile_files(md_files)
+        print("Done\n")
 
-
-class TexCompiler:
-    def __init__(self):
-        self.log_file_encoding = "ISO-8859-1"
-
-    def compile(self, command):
-        p = Popen(command, stdout=PIPE, stderr=PIPE, shell=True)
-        output = p.communicate()
-        out = output[0].decode("utf-8")
-        # err = output[1].decode("utf-8")
-        opts = re.split(r'\s+', command)
-        ind = [i for i, x in enumerate(opts) if "output-directory" in x]
-        if ind:
-            ind = ind[0]
-        else:
-            ind = None
-        paras = out.split("\n\n")
-        warnings = [x.replace("Warning", COLORS.ALT_RED + "Warning" + COLORS.ENDC)
-                    for x in paras if "Warning" in x]
-        errors = [x.replace("Error", COLORS.BRIGHT_RED + "Error" + COLORS.ENDC).
-                  replace("error", COLORS.BRIGHT_RED + "error" + COLORS.ENDC)
-                  for x in paras if "Error" in x or "error" in x]
-        fatal = [x.replace("Fatal", COLORS.BRIGHT_RED + "Fatal" + COLORS.ENDC).
-                 replace("fatal", COLORS.BRIGHT_RED + "fatal" + COLORS.ENDC)
-                 for x in paras if "fatal" in x.lower()]
-        if fatal:
-            print(f"pdftex {COLORS.BRIGHT_RED}fatal error{COLORS.ENDC}:")
-            for i, x in enumerate(errors):
-                x = x.replace("\n", "\n\t")
-                print(f"{i+1}. \t{x}")
-            return False
-        if ind is not None:
-            log_file_name = os.path.basename(opts[-1]).replace(".tex", ".log").strip()
-            log_file = os.path.join(opts[ind+1].strip(), log_file_name)
-            with open(log_file, "rb") as f:
-                log_bytes = f.read()
-            try:
-                log_text = log_bytes.decode(self.log_file_encoding).split("\n\n")
-            except UnicodeDecodeError as e:
-                print(f"UTF codec failed for log_file {log_file}. Error {e}")
-                self.log_file_encoding = chardet.detect(log_bytes)["encoding"]
-                print(f"Opening with new codec {self.log_file_encoding}")
-                log_text = log_bytes.decode(self.log_file_encoding, "ignore")
-            warnings.extend([re.split(r'(\n\s+\n)', x)[0].
-                             replace("Undefined",
-                                     COLORS.ALT_RED +
-                                     "Undefined" +
-                                     COLORS.ENDC).replace("undefined",
-                                                          COLORS.ALT_RED +
-                                                          "undefined" +
-                                                          COLORS.ENDC)
-                             for x in log_text if "undefined" in x.lower()])
-        if errors:
-            print("pdftex errors:")
-            for i, x in enumerate(errors):
-                x = x.replace("\n", "\n\t")
-                print(f"{i+1}. \t{x}")
-        if warnings:
-            print("pdftex warnings:")
-            for i, x in enumerate(warnings):
-                x = x.replace("\n", "\n\t")
-                print(f"{i+1}. \t{x}")
-        return True
+    # CHECK: If it's working correctly
+    def get_md_files(self, e):
+        "Return all the markdown files which include the template"
+        if e.endswith('.md'):
+            return e
+        elif e.endswith('template'):
+            print("template" + e)
+            md_files = []
+            elements = self.get_watched()
+            elements = [elem for elem in elements if elem.endswith('.md')]
+            for elem in elements:
+                with open(elem, 'r') as f:
+                    text = f.read()
+                if ("includes " + e) in text:
+                    md_files.append(elem)
+            return md_files
 
 
 # CHECK: What should configuration hold?
@@ -156,9 +117,13 @@ class TexCompiler:
 # TODO: Pandoc input and output processing should be with a better helper and
 #       separate from config maybe
 class Configuration:
-    def __init__(self, config_file="config.ini", pandoc_path=None, live_server=False):
+    def __init__(self, watch_dir, output_dir, config_file="config.ini",
+                 pandoc_path=None, post_processor=None, live_server=False):
+        self._watch_dir = watch_dir
+        self._output_dir = output_dir
         self._pandoc_path = pandoc_path
         self._config_file = config_file
+        self._post_processor = post_processor
         self.live_server = live_server
         self._conf = configparser.ConfigParser()
         self._conf.optionxform = str
@@ -169,6 +134,49 @@ class Configuration:
         self._included_extensions = []
         self._excluded_files = []
         self._debug_levels = ["error", "warning", "info", "debug"]
+
+    @property
+    def post_processor(self):
+        return self._post_processor
+
+    @post_processor.setter
+    def post_processor(self, postproc_module):
+        if isinstance(postproc_module, str):
+            if os.path.exists(postproc_module):
+                pass
+        if postproc_module:
+            try:
+                # NOTE: Must contain symbol post_processor
+                self.post_processor = load_user_module(postproc_module).post_processor
+                print(f"Post Processor module {postproc_module} successfully loaded")
+            except Exception as e:
+                print(f"Error occured while loading module {postproc_module}, {e}")
+                self.post_processor = None
+        else:
+            print(f"No Post Processor module given")
+            self.post_processor = None
+
+    @property
+    def output_dir(self):
+        return self._output_dir
+
+    @output_dir.setter
+    def output_dir(self, x):
+        if os.path.exists(os.path.expanduser(x)):
+            self._pandoc_path = x
+        else:
+            print(f"Could not set output_dir {x}. Directory doesn't exist")
+
+    @property
+    def watch_dir(self):
+        return self._watch_dir
+
+    @watch_dir.setter
+    def watch_dir(self, x):
+        if os.path.exists(os.path.expanduser(x)):
+            self._pandoc_path = x
+        else:
+            print(f"Could not set watch_dir {x}. Directory doesn't exist")
 
     @property
     def pandoc_path(self):
@@ -291,228 +299,33 @@ class Configuration:
                 watched = False
         return watched
 
-    # TODO: Should be cached
+    # CHECK: Should be cached maybe?
     def get_watched(self):
-        all_files = glob('**', recursive=True)
+        all_files = glob(os.path.join(self._watch_dir, '**'), recursive=True)
         elements = [f for f in all_files if self.is_watched(f)]
         return elements
 
-
-def getext(filename):
-    "Get the file extension."
-    return os.path.splitext(filename)[-1].lower()
-
-
-def get_now():
-    return datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S")
-
-
-def compile_files(md_files, config):
-    post_processor = config.post_processor
-    post = []
-    if md_files and isinstance(md_files, str):
-        if config.log_level > 2:
-            print(f"{COLORS.BLUE}Compiling{COLORS.ENDC}: {md_files}")
-        commands = config.get_commands(md_files)
-        if commands is not None:
-            post.append(markdown_compile(commands, md_files))
-    elif isinstance(md_files, list):
-        for md_file in md_files:
-            commands = config.get_commands(md_file)
-            if config.log_level > 2:
-                print(f"{COLORS.BLUE}Compiling{COLORS.ENDC}: {md_file}")
+    def compile_files(self, md_files):
+        """This function logs the compilation and calls the post_processor if it
+        exists.
+        """
+        post = []
+        if md_files and isinstance(md_files, str):
+            if self.log_level > 2:
+                print(f"{COLORS.BLUE}Compiling{COLORS.ENDC}: {md_files}")
+            commands = self.get_commands(md_files)
             if commands is not None:
-                post.append(markdown_compile(commands, md_file))
-    if commands and post_processor and post:
-        print("Calling post_processor")
-        post_processor(post)
-
-
-def exec_tex_compile(command):
-    p = Popen(command, stdout=PIPE, stderr=PIPE, shell=True)
-    output = p.communicate()
-    out = output[0].decode("utf-8")
-    # err = output[1].decode("utf-8")
-    opts = re.split(r'\s+', command)
-    ind = [i for i, x in enumerate(opts) if "output-directory" in x]
-    if ind:
-        ind = ind[0]
-    else:
-        ind = None
-    paras = out.split("\n\n")
-    warnings = [x.replace("Warning", COLORS.ALT_RED + "Warning" + COLORS.ENDC)
-                for x in paras if "Warning" in x]
-    errors = [x.replace("Error", COLORS.BRIGHT_RED + "Error" + COLORS.ENDC).
-              replace("error", COLORS.BRIGHT_RED + "error" + COLORS.ENDC)
-              for x in paras if "Error" in x or "error" in x]
-    fatal = [x.replace("Fatal", COLORS.BRIGHT_RED + "Fatal" + COLORS.ENDC).
-             replace("fatal", COLORS.BRIGHT_RED + "fatal" + COLORS.ENDC)
-             for x in paras if "fatal" in x.lower()]
-    if fatal:
-        print(f"pdftex {COLORS.BRIGHT_RED}fatal error{COLORS.ENDC}:")
-        for i, x in enumerate(errors):
-            x = x.replace("\n", "\n\t")
-            print(f"{i+1}. \t{x}")
-        return False
-    if ind is not None:
-        log_file_name = os.path.basename(opts[-1]).replace(".tex", ".log").strip()
-        log_file = os.path.join(opts[ind+1].strip(), log_file_name)
-        with open(log_file, "rb") as f:
-            log_bytes = f.read()
-        try:
-            log_text = log_bytes.decode("utf-8").split("\n\n")
-        except UnicodeDecodeError as e:
-            print(f"UTF codec failed for log_file {log_file}. Error {e}")
-            encoding = chardet.detect(log_bytes)["encoding"]
-            print(f"Opening with codec {encoding}")
-            log_text = log_bytes.decode(encoding, "ignore")
-        warnings.extend([re.split(r'(\n\s+\n)', x)[0].
-                         replace("Undefined",
-                                 COLORS.ALT_RED +
-                                 "Undefined" +
-                                 COLORS.ENDC).replace("undefined",
-                                                      COLORS.ALT_RED +
-                                                      "undefined" +
-                                                      COLORS.ENDC)
-                         for x in log_text if "undefined" in x.lower()])
-    if errors:
-        print("pdftex errors:")
-        for i, x in enumerate(errors):
-            x = x.replace("\n", "\n\t")
-            print(f"{i+1}. \t{x}")
-    if warnings:
-        print("pdftex warnings:")
-        for i, x in enumerate(warnings):
-            x = x.replace("\n", "\n\t")
-            print(f"{i+1}. \t{x}")
-    return True
-
-# NOTE: I don't like global variables but it's ok for now
-tex_compiler = TexCompiler()
-def exec_command(command):
-    print(f"Executing command : {command}")
-    os.chdir(os.path.abspath(os.getcwd()))
-    if command.startswith("pdflatex") or command.startswith("pdftex"):
-        try:
-            # status = exec_tex_compile(command)
-            status = tex_compiler.compile(command)
-            return status
-        except Exception as e:
-            print(f"Error occured while compiling file {e}")
-            return False
-    else:
-        p = Popen(command, stdout=PIPE, stderr=PIPE, shell=True)
-        output = p.communicate()
-        out = output[0].decode("utf-8")
-        err = output[1].decode("utf-8")
-        success = not p.returncode
-        if success:
-            if out:
-                out = out.strip("\n")
-                print(f"Output from command: {out}")
-            if err:
-                err = err.strip("\n")
-                err = "\n".join([f"\t{e}" for e in err.split("\n")])
-                print(f"No error from command, but: {COLORS.ALT_RED}\n{err}{COLORS.ENDC}")
-            return True
-        else:
-            print(f"Error occured : {err}")
-            return False
-
-
-# NOTE: Only markdown files are watched and supported for now
-def markdown_compile(commands, md_file: str) -> None:  # FIXME: Actually it's a path
-    if not isinstance(md_file, str) or not md_file.endswith('.md'):
-        print(f"Not markdown file {md_file}")
-        return
-    print(f"\n{COLORS.BRIGHT_BLUE}Compiling {md_file} at {get_now()}{COLORS.ENDC}")
-    postprocess = []
-    # NOTE: commands' values are either strings or lists of strings
-    for filetype, command_dict in commands.items():
-        command = command_dict["command"]
-        out_file = command_dict["out_file"]
-        if isinstance(command, str):
-            status = exec_command(command)
-            if status:
-                # mark status for processing
-                postprocess.append({"in_file": md_file, "out_file": out_file})
-        elif isinstance(command, list):
-            statuses = []
-            for com in command:
-                statuses.append(exec_command(com))
-            if all(statuses):
-                postprocess.append({"in_file": md_file, "out_file": out_file})
-    return postprocess
-
-
-# TODO: This should only check for change in md files and associated <!-- includes --> files
-class ChangeHandler(FileSystemEventHandler):
-    def __init__(self, config, root='.'):
-        self.root = root
-        self.config = config
-        postproc_module = config.post_processor
-        if postproc_module:
-            try:
-                self.config.post_processor = load_user_module(postproc_module).post_processor
-                print(f"Post Processor module {postproc_module} successfully loaded")
-            except Exception as e:
-                print(f"Error occured while loading module {postproc_module}, {e}")
-                self.config.post_processor = None
-        else:
-            print(f"No Post Processor module given")
-            self.config.post_processor = None
-
-    # NOTE: DEBUG
-    # def on_any_event(self, event):
-    #     print(str(event))
-
-    def on_created(self, event):
-        "Event fired when a new file is created"
-        pwd = os.path.abspath(self.root) + '/'
-        filepath = str(event.src_path)
-        assert pwd in filepath
-        filepath = filepath.replace(pwd, '')
-        watched = self.config.is_watched(filepath)
-        if watched:
-            md_files = self.get_md_files(filepath)
-            self.compile_stuff(md_files)
-
-    def on_modified(self, event):
-        "Event fired when a file is modified"
-        if self.config.log_level > 2:
-            print("File " + event.src_path + " modified")
-        md_files = self.get_md_files(event.src_path)
-        if self.config.log_level > 2:
-            print(f"DEBUG: {md_files}")
-        if md_files:
-            self.compile_stuff(md_files)
-
-    # NOTE: Maybe rename this function
-    def compile_stuff(self, md_files: Union[str, List[str]]) -> None:
-        "Compile if required when an event is fired"
-        # NOTE:
-        # The assumption below should not be on the type of variable
-        # Though assumption is actually valid as there's only a
-        # single file at a time which is checked
-        compile_files(md_files, self.config)
-        print("Done\n")
-
-    # CHECK: If it's working correctly
-    def get_md_files(self, e):
-        "Return all the markdown files which include the template"
-        if e.endswith('.md'):
-            return e
-        elif e.endswith('template'):
-            print("template" + e)
-            md_files = []
-            elements = self.config.get_watched()
-            elements = [elem for elem in elements if elem.endswith('.md')]
-            for elem in elements:
-                with open(elem, 'r') as f:
-                    text = f.read()
-                if ("includes " + e) in text:
-                    md_files.append(elem)
-            return md_files
+                post.append(markdown_compile(commands, md_files))
+        elif isinstance(md_files, list):
+            for md_file in md_files:
+                commands = self.get_commands(md_file)
+                if self.log_level > 2:
+                    print(f"{COLORS.BLUE}Compiling{COLORS.ENDC}: {md_file}")
+                if commands is not None:
+                    post.append(markdown_compile(commands, md_file))
+        if commands and self.post_processor and post:
+            print("Calling post_processor")
+            self.post_processor(post)
 
 
 def parse_options():
@@ -523,6 +336,12 @@ def parse_options():
         "--pandoc-path", dest="pandoc_path",
         required=False,
         help="Provide custom pandoc path. Must be full path to executable")
+    parser.add_argument(
+        "--watch-dir", "-d", dest="watch_dir", default=".",
+        help="Directory where to watch files. Defaults to current directory")
+    parser.add_argument(
+        "--output-dir", "-o", dest="output_dir", default=".",
+        help="Directory for output files. Defaults to current directory")
     parser.add_argument(
         "-e", "--exclude", dest="exclusions",
         default=".pdf,.tex,doc,bin,common", required=False,
@@ -602,7 +421,10 @@ def parse_options():
     print(f"Pandoc path is {pandoc_path}")
     if args[0].live_server:
         raise NotImplementedError
-    config = Configuration(config_file=args[0].config_file, pandoc_path=pandoc_path,
+    config = Configuration(args[0].watch_dir, args[0].output_dir,
+                           config_file=args[0].config_file,
+                           pandoc_path=pandoc_path,
+                           post_processor=args[0].post_processor,
                            live_server=args[0].live_server)
     # NOTE: The program assumes that extensions startwith '.'
     if args[0].exclude_filters:
@@ -631,7 +453,9 @@ def parse_options():
     if config.log_level > 2:
         print("\n".join(out.split("\n")[:3]))
         print("-" * len(out.split("\n")[2]))
-
+    if args[0].log_file:
+        config.log_file = args[0].log_file
+        print("Log file isn't implemented yet. Will output to stdout")
     # TODO: Need Better checks
     # NOTE: These options will override pandoc options in all the sections of
     #       the config file
@@ -643,7 +467,6 @@ def parse_options():
     config.set_generation_opts(args[0].generation.split(','), ' '.join(args[1]))
     print(f"Generation options are \n{config.generation_opts}")
     # NOTE: should it be like this?
-    config.post_processor = args[0].post_processor
     if args[0].run_once:
         return config, True, args[0].input_files.split(",")
     else:
@@ -665,21 +488,25 @@ def main():
         elif not all(x.endswith(".md") for x in input_files):
             print("Error! Some input files not markdown")
         else:
-            print(f"Will compile {input_files} once.")
-            compile_files(input_files, config)
+            print(f"Will compile {input_files} to {config.output_dir} once.")
+            config.compile_files(input_files)
     else:
         watched_elements = config.get_watched()
-        print("watching ", watched_elements)
+        print("watching ", [w.replace(config.watch_dir, "")
+                            for w in watched_elements])
+        print(f"Will output to {config.output_dir}")
         if config.live_server:
+            # NOTE: Have to switch to Flask
             # print("Starting pandoc watcher and the live server ...")
             # p = Popen(['live-server', '--open=.'])
-            # NOTE: Have to switch to Flask
             raise NotImplementedError
         else:
             print("Starting pandoc watcher only ...")
-        event_handler = ChangeHandler(config)
+        event_handler = ChangeHandler(config.watch_dir, config.is_watched,
+                                      config.get_watched, config.compile_files,
+                                      config.log_level)
         observer = Observer()
-        observer.schedule(event_handler, os.getcwd(), recursive=True)
+        observer.schedule(event_handler, config.watch_dir, recursive=True)
         observer.start()
         try:
             while True:
