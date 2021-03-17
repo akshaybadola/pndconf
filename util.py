@@ -7,9 +7,12 @@ from colors import COLORS
 
 
 def which(program):
-    """
+    """Search for program name in paths.
+
     This function is taken from
     http://stackoverflow.com/questions/377017/test-if-executable-exists-in-python
+    Though could actually simply use `which` shell command, but yeah on windows
+    it may not be available.
     """
     def is_exe(fpath):
         return os.path.isfile(fpath) and os.access(fpath, os.X_OK)

@@ -20,6 +20,7 @@
 # be filename_html_files and not filename_files perhaps update pdf generation
 # also to filename_pdf_files
 
+from typing import Dict, Union, List, Optional
 import re
 import os
 import time
@@ -29,7 +30,6 @@ import pprint
 from subprocess import Popen, PIPE
 import configparser
 import argparse
-from typing import Dict, Union, List
 from glob import glob
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
@@ -49,8 +49,11 @@ from compilers import markdown_compile
 #        2. Or I could make a separate Compiler (or Executor or Something) class
 #        which does what?
 class ChangeHandler(FileSystemEventHandler):
-    """ChangeHandler fires the commands corresnponding to the event and the
-    Configuration instance `config`"""
+    """Watch for changes in file system and fire events.
+
+    ChangeHandler fires the commands corresnponding to the event and the
+    Configuration instance `config`
+    """
     def __init__(self, root, is_watched, get_watched, compile_func, log_level):
         self.root = root
         self.is_watched = is_watched
@@ -76,7 +79,7 @@ class ChangeHandler(FileSystemEventHandler):
     def on_modified(self, event):
         "Event fired when a file is modified"
         if self.log_level > 2:
-            logd("File " + event.src_path + " modified")
+            logd(f"File {event.src_path} modified")
         md_files = self.get_md_files(event.src_path)
         if self.log_level > 2:
             logd(f"DEBUG: {md_files}")
@@ -99,7 +102,7 @@ class ChangeHandler(FileSystemEventHandler):
         if e.endswith('.md'):
             return e
         elif e.endswith('template'):
-            logd("template" + e)
+            logd(f"Template {e}")
             md_files = []
             elements = self.get_watched()
             elements = [elem for elem in elements if elem.endswith('.md')]
@@ -117,7 +120,8 @@ class ChangeHandler(FileSystemEventHandler):
 #       separate from config maybe
 class Configuration:
     def __init__(self, watch_dir, output_dir, config_file="config.ini",
-                 pandoc_path=None, post_processor=None, live_server=False):
+                 pandoc_path=None, post_processor=None, live_server=False,
+                 extra_opts=False):
         self.watch_dir = watch_dir
         self.output_dir = output_dir
         self.pandoc_path = pandoc_path
@@ -132,14 +136,18 @@ class Configuration:
         self._excluded_folders = []
         self._included_extensions = []
         self._excluded_files = []
+        self._use_extra_opts = extra_opts
+        self._extra_opts = {"latex-preproc": None}
         self._debug_levels = ["error", "warning", "info", "debug"]
 
     @property
     def post_processor(self):
+        "Return the post processor"
         return self._post_processor
 
     @post_processor.setter
     def post_processor(self, postproc_module):
+        "Set the post processor"
         if isinstance(postproc_module, str):
             if os.path.exists(postproc_module):
                 pass
@@ -152,7 +160,7 @@ class Configuration:
                 loge(f"Error occured while loading module {postproc_module}, {e}")
                 self.post_processor = None
         else:
-            self.logw(f"No Post Processor module given")
+            logw(f"No Post Processor module given")
             self.post_processor = None
 
     @property
@@ -219,7 +227,8 @@ class Configuration:
 
     # TODO: should be a better way to compile with pdflatex
     # TODO: User defined options should override the default ones and the file ones
-    def get_commands(self, in_file: str) -> Dict[str, Dict[str, str]]:
+    def get_commands(self, in_file: str) ->\
+            Optional[Dict[str, Dict[str, Union[List[str], str]]]]:
         # TODO: The following should be replaced with separate tests
         # assert in_file.endswith('.md')
         # assert self._filetypes
@@ -248,6 +257,8 @@ class Configuration:
                         if k[2:] == 'filter':
                             command.append(k + '=' + v if v else k)
                         command.append(k + '=' + in_file_pandoc_opts[k[2:]])
+                    elif k[2:] in self._extra_opts:
+                        self._extra_opts[k[2:]] = v
                     else:
                         command.append(k + '=' + v if v else k)
                 else:
@@ -256,12 +267,19 @@ class Configuration:
                         command.append(k + ' ' + out_file)
                     else:
                         command.append(k + (' ' + v) if v else '')
-            command = " ".join([self.pandoc_path, ' '.join(command), in_file])
+            command_str = " ".join([self.pandoc_path, ' '.join(command), in_file])
+            command = []
             if ft == 'pdf':
-                command = [command, 'mkdir -p ' + out_path_no_ext + "_files"]
+                # FIXME: Bad hack for doing a regexp after latex generation
+                if self._extra_opts["latex-preproc"] and self._use_extra_opts:
+                    command = [command_str, self._extra_opts["latex-preproc"] + " " +
+                               f"{out_path_no_ext}.tex"]
+                else:
+                    command = [command_str]
+                command.append('mkdir -p ' + out_path_no_ext + "_files")
                 command.append(pdflatex)
                 out_file = os.path.join(out_path_no_ext + '_files', filename_no_ext + ".pdf")
-            commands[ft] = {"command": command, "out_file": out_file}
+            commands[ft] = {"command": command or command_str, "out_file": out_file}
         return commands
 
     def set_included_extensions(self, included_file_extensions):
@@ -369,6 +387,8 @@ def parse_options():
         action="store_true",
         help="Run once for given input files without starting the watchdog")
     parser.add_argument(
+        "--extra-opts", dest="extra_opts", action="store_true", help="Use extra opts.")
+    parser.add_argument(
         "--input-files", dest="input_files",
         default="",
         help="Comma separated list of input files. Required if \"--run-once\" is specified")
@@ -425,7 +445,8 @@ def parse_options():
                            config_file=args[0].config_file,
                            pandoc_path=pandoc_path,
                            post_processor=args[0].post_processor,
-                           live_server=args[0].live_server)
+                           live_server=args[0].live_server,
+                           extra_opts=args[0].extra_opts)
     # NOTE: The program assumes that extensions startwith '.'
     if args[0].exclude_filters:
         logi("Excluding files for given filters",
@@ -491,10 +512,10 @@ def main():
             logbi(f"Will compile {input_files} to {config.output_dir} once.")
             config.compile_files(input_files)
     else:
-        watched_elements = config.get_watched()
-        logi("watching ", [w.replace(config.watch_dir, "")
-                           for w in watched_elements])
-        logi(f"Will output to {config.output_dir}")
+        logi(f"\nWatching in {os.path.abspath(config.watch_dir)}")
+        watched_elements = [os.path.basename(w) for w in config.get_watched()]
+        logi(f"Watching: {watched_elements}")
+        logi(f"Will output to {os.path.abspath(config.output_dir)}")
         if config.live_server:
             # NOTE: Have to switch to Flask
             # print("Starting pandoc watcher and the live server ...")

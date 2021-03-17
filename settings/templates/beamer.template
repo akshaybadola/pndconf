@@ -21,6 +21,7 @@ $endif$
 \usepackage{ifxetex,ifluatex}
 \usepackage{fixltx2e} % provides \textsubscript
 \usepackage{lmodern}
+\usepackage{hyperref}
 \providecommand{\tightlist}{%
   \setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}}
 \ifxetex
@@ -57,9 +58,13 @@ $endif$
 %% CUSTOM biblatex
 $if(biblatex)$
 \usepackage[backref=true, backend=biber]{biblatex}
-$if(biblio-files)$
-\bibliography{$biblio-files$}
-$endif$
+    $if(biblio-files)$
+        \bibliography{$biblio-files$}
+    $endif$
+\let\oldfootnotesize\footnotesize
+\renewcommand*{\footnotesize}{\oldfootnotesize\tiny}
+\let\oldbibfont\bibfont
+\renewcommand*{\bibfont}{\oldbibfont\tiny}
 $endif$
 $if(listings)$
 \usepackage{listings}

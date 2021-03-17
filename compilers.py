@@ -1,8 +1,8 @@
+from typing import Dict, Any, Union, List, Optional
 import os
 import re
 import chardet
 from subprocess import Popen, PIPE
-from typing import Dict, Any
 
 from util import get_now
 from colors import COLORS
@@ -110,7 +110,8 @@ def exec_command(command):
 
 
 # NOTE: Only markdown files are watched and supported for now
-def markdown_compile(commands: Dict[str, str], md_file: str) -> Any:  # FIXME: Actually it's a path
+def markdown_compile(commands: Dict[str, Dict[str, Union[List[str], str]]],
+                     md_file: str) -> Any:  # FIXME: Actually it's a path
     if not isinstance(md_file, str) or not md_file.endswith('.md'):
         print(f"Not markdown file {md_file}")
         return

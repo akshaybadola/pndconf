@@ -1,12 +1,12 @@
 \documentclass[$if(fontsize)$$fontsize$,$endif$$if(lang)$$lang$,$endif$$if(papersize)$$papersize$,$endif$$for(classoption)$$classoption$$sep$,$endfor$]{$documentclass$}
 $if(fontfamily)$
-\usepackage{$fontfamily$}
+  \usepackage{$fontfamily$}
 $else$
-\usepackage{lmodern}
+  \usepackage{lmodern}
 $endif$
 $if(linestretch)$
-\usepackage{setspace}
-\setstretch{$linestretch$}
+  \usepackage{setspace}
+  \setstretch{$linestretch$}
 $endif$
 \usepackage{amssymb,amsmath}
 \usepackage[ruled,vlined]{algorithm2e}
@@ -81,10 +81,8 @@ $if(verbatim-in-note)$
 \usepackage{fancyvrb}
 \VerbatimFootnotes
 $endif$
-$if(tables)$
 \usepackage{longtable,booktabs}
-$endif$
-$if(graphics)$
+% NOTE: Customization to always include graphicx
 \usepackage{graphicx}
 \makeatletter
 \def\maxwidth{\ifdim\Gin@nat@width>\linewidth\linewidth\else\Gin@nat@width\fi}
@@ -94,7 +92,6 @@ $if(graphics)$
 % margins by default, and it is still possible to overwrite the defaults
 % using explicit options in \includegraphics[width, height, ...]{}
 \setkeys{Gin}{width=\maxwidth,height=\maxheight,keepaspectratio}
-$endif$
 \ifxetex
   \usepackage[setpagesize=false, % page size defined by xetex
               unicode=false, % unicode breaks when used with xetex
