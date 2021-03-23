@@ -210,14 +210,14 @@ class Configuration:
         else:
             self._debug_level = 0
 
-    def set_generation_opts(self, filetypes: List[str], pandoc_options) -> None:
+    def set_generation_opts(self, filetypes: List[str], pandoc_options: List[str]) -> None:
         self._filetypes = filetypes
         if pandoc_options:
             for section in filetypes:
                 for opt in pandoc_options:
-                    if opt.startswith('--'):
+                    if opt.startswith('--') and "=" in opt:
                         opt_key, opt_value = opt.split('=')
-                        self._conf[section][opt_key] = self._conf[section][opt_value]
+                        self._conf[section][opt_key] = opt_value
                     else:
                         self._conf[section][opt] = ''
 
@@ -348,7 +348,13 @@ class Configuration:
 
 def parse_options():
     parser = argparse.ArgumentParser(
-        description="Watcher for pandoc compilation",
+        description="A config manager and file watcher for pandoc",
+        usage="""
+
+    pandocwatch [opts] [pandoc_opts]
+
+    Pandoc options must be entered in '--opt=value' format.
+""",
         formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument(
         "--pandoc-path", dest="pandoc_path",
@@ -485,7 +491,7 @@ def parse_options():
         if arg.startswith('--'):
             assert '=' in arg
     logbi(f"Will generate for {args[0].generation.upper()}")
-    config.set_generation_opts(args[0].generation.split(','), ' '.join(args[1]))
+    config.set_generation_opts(args[0].generation.split(','), args[1])
     logi(f"Generation options are \n{config.generation_opts}")
     # NOTE: should it be like this?
     if args[0].run_once:
