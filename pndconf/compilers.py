@@ -4,17 +4,21 @@ import re
 import chardet
 from subprocess import Popen, PIPE
 
-from util import get_now
+from util import get_now as now
 from colors import COLORS
 
 
 # FIXME: Use log* for logging
 class TexCompiler:
-    def __init__(self):
+    def __init__(self, env_vars: str = ""):
         self.log_file_encoding = "ISO-8859-1"
+        self.env_vars = env_vars
 
     def compile(self, command):
-        p = Popen(command, stdout=PIPE, stderr=PIPE, shell=True)
+        if self.env_vars:
+            p = Popen(self.env_vars + " ; " + command, stdout=PIPE, stderr=PIPE, shell=True)
+        else:
+            p = Popen(command, stdout=PIPE, stderr=PIPE, shell=True)
         output = p.communicate()
         out = output[0].decode("utf-8")
         # err = output[1].decode("utf-8")
@@ -115,7 +119,7 @@ def markdown_compile(commands: Dict[str, Dict[str, Union[List[str], str]]],
     if not isinstance(md_file, str) or not md_file.endswith('.md'):
         print(f"Not markdown file {md_file}")
         return
-    print(f"\n{COLORS.BRIGHT_BLUE}Compiling {md_file} at {get_now()}{COLORS.ENDC}")
+    print(f"\n{COLORS.BRIGHT_BLUE}Compiling {md_file} at {now()}{COLORS.ENDC}")
     postprocess = []
     # NOTE: commands' values are either strings or lists of strings
     for filetype, command_dict in commands.items():

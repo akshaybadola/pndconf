@@ -19,3 +19,12 @@ The templates in the settings/templates directory are derived from the repositor
 - charts.js file in settings should be replaced with the correct file.
 - `csl` files, according to the styles required should be procured and put in the settings/csl directory.
 - See `pandocwatch --help` for a list of options.
+
+## Todo
+
+- [ ] Clean the code up
+- [ ] Issue warning when incompatible options are used --biblatex and
+  pandoc-citeproc conflict e.g.
+- [ ] Remove blog generator as that's a separate repo now.
+
+

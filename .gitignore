@@ -1,1 +1,10 @@
 setup.cfg
+*.md
+*.html
+*.pdf
+*.aux
+*.log
+*.tex
+*.nav
+*.out
+*.snm

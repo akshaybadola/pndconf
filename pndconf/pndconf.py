@@ -15,12 +15,8 @@
 # TODO: Issue warning when incompatible options are used --biblatex and
 #       pandoc-citeproc conflict e.g.
 
-# NOTE: FOR BLOG GENERATION - tags, keywords, SEO
-# etc. should be updated from yaml in the markdown - if html has files it should
-# be filename_html_files and not filename_files perhaps update pdf generation
-# also to filename_pdf_files
-
-from typing import Dict, Union, List, Optional
+from typing import Dict, Union, List, Optional, Callable
+from pathlib import Path
 import re
 import os
 import time
@@ -34,20 +30,13 @@ from glob import glob
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 
+from common_pyutil.system import Semver
+from common_pyutil.functional import unique
+
 from util import which, load_user_module, logd, loge, logi, logbi, logw
 from compilers import markdown_compile
 
 
-# TODO: This should only check for change in md files and associated <!-- includes --> files
-#
-# CHECK: So I changed the ChangeHandler to be a bit more explicit but now I'm
-#        thinking how much this and Configuration are coupled.
-#        I can either:
-#        1. Merge them into a single class, but then Configuration will have to
-#        inherit from FileSystemEventHandler and maybe have to be renamed to
-#        PandocWatch
-#        2. Or I could make a separate Compiler (or Executor or Something) class
-#        which does what?
 class ChangeHandler(FileSystemEventHandler):
     """Watch for changes in file system and fire events.
 
@@ -119,19 +108,22 @@ class ChangeHandler(FileSystemEventHandler):
 # TODO: Pandoc input and output processing should be with a better helper and
 #       separate from config maybe
 class Configuration:
-    def __init__(self, watch_dir, output_dir, config_file="config.ini",
-                 pandoc_path=None, post_processor=None, live_server=False,
+    def __init__(self, watch_dir: Path, output_dir: Path,
+                 config_file: Path = Path("config.ini"),
+                 pandoc_path: Optional[Path] = None,
+                 pandoc_version: str = "",
+                 post_processor: Optional[Callable] = None,
                  extra_opts=False):
         self.watch_dir = watch_dir
         self.output_dir = output_dir
         self.pandoc_path = pandoc_path
+        self.pandoc_version = Semver(pandoc_version)
         self._config_file = config_file
         self._post_processor = post_processor
-        self.live_server = live_server
         self._conf = configparser.ConfigParser()
         self._conf.optionxform = str
         self._conf.read(self._config_file)
-        self._excluded_regex = []
+        self._excluded_regexp = []
         self._excluded_extensions = []
         self._excluded_folders = []
         self._included_extensions = []
@@ -211,19 +203,31 @@ class Configuration:
             self._debug_level = 0
 
     def set_generation_opts(self, filetypes: List[str], pandoc_options: List[str]) -> None:
+        """
+        """
         self._filetypes = filetypes
         if pandoc_options:
             for section in filetypes:
                 for opt in pandoc_options:
                     if opt.startswith('--') and "=" in opt:
                         opt_key, opt_value = opt.split('=')
-                        self._conf[section][opt_key] = opt_value
+                        if opt_key == "--filter":
+                            self._conf[section][opt_key] = ",".join([self._conf[section][opt_key], opt_value])
+                        else:
+                            self._conf[section][opt_key] = opt_value
                     else:
                         self._conf[section][opt] = ''
 
     @property
     def generation_opts(self):
         return pprint.pformat([(f, dict(self._conf[f])) for f in self._filetypes])
+
+    def add_filters(self, command, k, v):
+        vals = unique(v.split(","))
+        if vals[0]:
+            for val in vals:
+                command.append(k + '=' + val)
+
 
     # TODO: should be a better way to compile with pdflatex
     # TODO: User defined options should override the default ones and the file ones
@@ -254,19 +258,25 @@ class Configuration:
                         command.append('-V ' + val.strip())
                 elif k.startswith('--'):
                     if k[2:] in in_file_pandoc_opts:
-                        if k[2:] == 'filter':
-                            command.append(k + '=' + v if v else k)
                         command.append(k + '=' + in_file_pandoc_opts[k[2:]])
+                        if k[2:] == 'filter':
+                            self.add_filters(command, k, v)
                     elif k[2:] in self._extra_opts:
                         self._extra_opts[k[2:]] = v
                     else:
-                        command.append(k + '=' + v if v else k)
+                        if k[2:] == 'filter':
+                            self.add_filters(command, k, v)
+                        else:
+                            command.append(k + '=' + v if v else k)
                 else:
                     if k == '-o':
                         out_file = out_path_no_ext + "." + v
                         command.append(k + ' ' + out_file)
                     else:
                         command.append(k + (' ' + v) if v else '')
+            if self.pandoc_version.geq("2.12") and "--filter=pandoc-citeproc" in command:
+                command.remove("--filter=pandoc-citeproc")
+                command.insert(0, "--citeproc")
             command_str = " ".join([self.pandoc_path, ' '.join(command), in_file])
             command = []
             if ft == 'pdf':
@@ -288,8 +298,9 @@ class Configuration:
     def set_excluded_extensions(self, excluded_file_extensions):
         self._excluded_extensions = excluded_file_extensions
 
-    def set_excluded_regex(self, excluded_filters):
-        self._excluded_regex = excluded_filters
+    def set_excluded_regexp(self, e, ignore_case: bool):
+        self._excluded_regexp = e
+        self._exclude_ignore_case = ignore_case
 
     def set_excluded_files(self, excluded_files):
         self._excluded_files = excluded_files
@@ -312,10 +323,14 @@ class Configuration:
         for fn in self._excluded_files:
             if fn in filepath:
                 watched = False
-        for regex in self._excluded_regex:
-            if re.findall(regex, filepath):
+        for regex in self._excluded_regexp:
+            flags = re.IGNORECASE if self._exclude_ignore_case else 0
+            if re.findall(regex, filepath, flags=flags):
                 watched = False
         return watched
+
+    def set_watched(self, watched: List[Path]):
+        pass
 
     # CHECK: Should be cached maybe?
     def get_watched(self):
@@ -328,6 +343,7 @@ class Configuration:
         exists.
         """
         post = []
+        commands = None
         if md_files and isinstance(md_files, str):
             if self.log_level > 2:
                 logbi(f"Compiling: {md_files}")
@@ -367,23 +383,26 @@ def parse_options():
         "-o", "--output-dir", dest="output_dir", default=".",
         help="Directory for output files. Defaults to current directory")
     parser.add_argument(
-        "-e", "--exclude", dest="exclusions",
+        "-i", "--ignore-extensions", dest="exclusions",
         default=".pdf,.tex,doc,bin,common", required=False,
         help="The extensions (.pdf for pdf files) or the folders to\
         exclude from watch operations separated with commas")
     parser.add_argument(
-        "--exclude-filters", dest="exclude_filters",
-        default="#,~", required=False,
+        "-w", "--watch-extensions", dest="inclusions",
+        default=".md", required=False,
+        help="The extensions (.pdf for pdf files) or the folders to\
+        exclude from watch operations separated with commas")
+    parser.add_argument(
+        "--exclude-regexp", dest="exclude_regexp",
+        default="#,~,readme.md,changelog.md", required=False,
         help="Files with specific regex to exclude. Should not contain ','")
+    parser.add_argument(
+        "--no-exclude-ignore-case", action="store_false", dest="exclude_ignore_case",
+        help="Whether the exclude regexp should ignore case or not.")
     parser.add_argument(
         "--exclude-files", dest="excluded_files",
         default="", required=False,
         help="Specific files to exclude from watching")
-    parser.add_argument(
-        "-i", "--include", dest="inclusions",
-        default=".md", required=False,
-        help="The extensions (.pdf for pdf files) or the folders to\
-        exclude from watch operations separated with commas")
     parser.add_argument(
         "-g", "--generation", dest="generation",
         default="blog", required=False,
@@ -403,10 +422,10 @@ def parse_options():
         help="python module (or filename, must be in path) from which to load" +
         "post_processor function should be named \"post_processor\"")
     # TODO: use a simple flask server instead
-    parser.add_argument(
-        "--live-server", dest="live_server",
-        action='store_true',
-        help="Start a live server?")
+    # parser.add_argument(
+    #     "--live-server", dest="live_server",
+    #     action='store_true',
+    #     help="Start a live server?")
     parser.add_argument(
         "--config-file", "-c", dest="config_file",
         default="config.ini",
@@ -426,10 +445,7 @@ def parse_options():
         help="Debug Level. One of: error, warning, info, debug")
     args = parser.parse_known_args()
 
-    if args[0].pandoc_path:
-        pandoc_path = args.pandoc_path
-    else:
-        pandoc_path = which("pandoc")
+    pandoc_path = args[0].pandoc_path or which("pandoc")
     if not os.path.exists(pandoc_path):
         loge("pandoc executable not available. Exiting!")
         exit(1)
@@ -445,19 +461,18 @@ def parse_options():
     out = Popen(shlex.split(f"{pandoc_path} --version"), stdout=PIPE).\
         communicate()[0].decode("utf-8")
     logi(f"Pandoc path is {pandoc_path}")
-    if args[0].live_server:
-        raise NotImplementedError
     config = Configuration(args[0].watch_dir, args[0].output_dir,
                            config_file=args[0].config_file,
                            pandoc_path=pandoc_path,
+                           pandoc_version=out.split()[1],
                            post_processor=args[0].post_processor,
-                           live_server=args[0].live_server,
                            extra_opts=args[0].extra_opts)
     # NOTE: The program assumes that extensions startwith '.'
-    if args[0].exclude_filters:
+    if args[0].exclude_regexp:
         logi("Excluding files for given filters",
-             str(args[0].exclude_filters.split(',')))
-        config.set_excluded_regex(args[0].exclude_filters.split(','))
+             str(args[0].exclude_regexp.split(',')))
+        config.set_excluded_regexp(args[0].exclude_regexp.split(','),
+                                   args[0].exclude_ignore_case)
     if args[0].inclusions:
         inclusions = args[0].inclusions
         inclusions = inclusions.split(",")
@@ -491,21 +506,19 @@ def parse_options():
         if arg.startswith('--'):
             assert '=' in arg
     logbi(f"Will generate for {args[0].generation.upper()}")
+    logbi(f"Extra pandoc args are {args[1]}")
     config.set_generation_opts(args[0].generation.split(','), args[1])
     logi(f"Generation options are \n{config.generation_opts}")
     # NOTE: should it be like this?
-    if args[0].run_once:
-        return config, True, args[0].input_files.split(",")
-    else:
-        return config, False, None
+    return config, args[0].run_once, args[0].input_files.split(",")
 
 
 # FIXME: A bunch of this code is annoying. Gotta reformat
 def main():
     config, run_once, input_files = parse_options()
+    input_files = [*filter(None, input_files)]
     if run_once:
         # remove null strings
-        input_files = [*filter(None, input_files)]
         not_input_files = [x for x in input_files if not os.path.exists(x)]
         if not_input_files:
             loge(f"{not_input_files} don't exist. Ignoring")
@@ -519,18 +532,19 @@ def main():
             config.compile_files(input_files)
     else:
         logi(f"\nWatching in {os.path.abspath(config.watch_dir)}")
-        watched_elements = [os.path.basename(w) for w in config.get_watched()]
+        if input_files:
+            watched_elements = input_files
+            is_watched = lambda x: [os.path.abspath(x) in watched_elements]
+            get_watched = lambda x: [os.path.abspath(x) for x in input_files]
+        else:
+            watched_elements = [os.path.basename(w) for w in config.get_watched()]
+            is_watched = config.is_watched
+            get_watched = config.get_watched
         logi(f"Watching: {watched_elements}")
         logi(f"Will output to {os.path.abspath(config.output_dir)}")
-        if config.live_server:
-            # NOTE: Have to switch to Flask
-            # print("Starting pandoc watcher and the live server ...")
-            # p = Popen(['live-server', '--open=.'])
-            raise NotImplementedError
-        else:
-            logi("Starting pandoc watcher only ...")
-        event_handler = ChangeHandler(config.watch_dir, config.is_watched,
-                                      config.get_watched, config.compile_files,
+        logi("Starting pandoc watcher...")
+        event_handler = ChangeHandler(config.watch_dir, is_watched,
+                                      get_watched, config.compile_files,
                                       config.log_level)
         observer = Observer()
         observer.schedule(event_handler, config.watch_dir, recursive=True)

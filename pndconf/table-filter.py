@@ -1,18 +1,23 @@
-#! /usr/bin/python3 Credits: Wagner Macedo,
+#! /usr/bin/python3
+# Credits: Wagner Macedo,
 # https://groups.google.com/forum/#!msg/pandoc-discuss/RUC-tuu_qf0/h-H3RRVt1coJ
 # This filter lets you have simple Pandoc tables (_with headers_) in a
 # two-column layout such as those of ACM and IEEE.
 
 import pandocfilters as pf
 
+
 def latex(s):
     return pf.RawBlock('latex', s)
+
 
 def inlatex(s):
     return pf.RawInline('latex', s)
 
+
 def tbl_caption(s):
     return pf.Para([inlatex(r'\caption{')] + s + [inlatex('}')])
+
 
 def tbl_alignment(s):
     aligns = {
@@ -23,6 +28,7 @@ def tbl_alignment(s):
     }
     return ''.join([aligns[e['t']] for e in s])
 
+
 def tbl_headers(s):
     result = s[0][0]['c'][:]
     for i in range(1, len(s)):
@@ -30,6 +36,7 @@ def tbl_headers(s):
         result.extend(s[i][0]['c'])
     result.append(inlatex(r' \\\midrule'))
     return pf.Para(result)
+
 
 def tbl_contents(s):
     result = []
@@ -42,6 +49,7 @@ def tbl_contents(s):
         result.extend(para)
         result[-1] = inlatex(r' \\' '\n')
     return pf.Para(result)
+
 
 def do_filter(k, v, f, m):
     if k == "Table":
