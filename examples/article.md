@@ -39,38 +39,22 @@ yaml format
 
 To cite something simply use [@darwin1871descent]. This should cite from
 `bibliography.bib`. We can also cite from the yaml references as
-[@yaml2020citation]. The two can be combined easily
+[@yaml2020citation]. The two can be combined easily.
 
-# Other formatting options
+You only need to insert a "References" heading at the end and the references
+will be generated below that.
 
-All standard markdown formatting is enabled by default.
+# Formatting
+
+Standard markdown formatting is supported and additional `pandoc` extensions can
+be added easily.
 
 # Pandoc options
 
-- This is some more test
+All standard `pandoc` formatting options can be passed to pandoc. See
+<https://pandoc.org/MANUAL.html> for more details. Notable are markdown specific
+options and the output specific options.
 
-- Adding a footnote ^[footnote] is simple.
-
-
-# Section 2
-
-## Section 2 Slide 1
-
-- Does this pause?
-
-. . .
-
-- Yes!
-
-## Section 2 Slide 3
-  * And this?
-* But this also?
-* A misc citation. [@pandoc]
-
-. . .
-
-### And this?
-  * And this?
+For example in pandoc a footnote can be added like: ^[This is a footnote].
 
 # References
-## References {.allowframebreaks}

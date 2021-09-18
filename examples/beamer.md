@@ -4,6 +4,8 @@ author: Awesome Author
 date: \today
 bibliography: ./bibliography.bib
 link-citations: true
+template: beamer
+csl: ieee
 ---
 
 <!--includes settings/templates/beamer.template-->

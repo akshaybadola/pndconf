@@ -1,9 +1,13 @@
-# pandocwatch
+# pndconf
 
 Pandoc configuration manager, file watcher and document generator.
 
 Automatic conversion of markdown to various formats with pre defined settings
 via templates and folder watch with preview.
+
+## Installation
+
+Can be installed via pip by `pip install https://github.com/akshaybadola/pndconf`.
 
 ## Usage
 
@@ -14,6 +18,9 @@ via templates and folder watch with preview.
   switches for the formats are stored in a configuration file in `ini` format.
 - If no config file is provided then a default config is used.
 - See `pndconf --help` for a list of options.
+
+By default it runs and watches for file system changes.
+You can also run once with `-ro` switch.
 
 ## Pandoc installation
 
@@ -36,11 +43,34 @@ generation. However if you need to customize it you can search for other
 templates. Path to the templates directory can be specified via
 `--templates-dir` option.
 
+If no `templates-dir` is given and a template is specified it's searched in the following order:
+- Absolute path of the template
+- In the same path as the input file(s).
+- A `templates` directory if it exists, in the same directory as the input file(s)
+
+A `beamer.template` is present in examples directory to help in generating a beamer document.
+CSL files are searched in a similar manner.
+
 A compendium of citation styles is available at [styles](https://github.com/citation-style-language/styles "Citation Styles").
 You can either clone the repository or download the required style
 files to a directory and give the path to `pndconf` with `--csl-dir`.
 
-## Todo
+## Examples
+
+A couple of examples are provided in the `examples` directory. After installation run:
+- `pndconf -g pdf`
+  This will watch for all markdown files and generate an article for each of
+  them as they change
+- `pndconf --input-files beamer.md -g beamer`
+  This requires a beamer template which is included in the `templates` directory.
+- `pndconf -ro --input-files beamer.md -g beamer`
+  This does not watch the filesystem for changes and only generates the beamer slides.
+
+You can check the input files and the metadata there. `beamer.md` specifies the
+beamer template for generation and also `ieee` csl file. That is also included
+in the `csl` directory.
+
+# Todo
 
 - [X] Remove the settings folder from the repo. It should be standalone.
 - [X] Remove blog generator as that's a separate repo now.
