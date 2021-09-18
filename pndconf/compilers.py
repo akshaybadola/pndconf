@@ -2,10 +2,11 @@ from typing import Dict, Any, Union, List, Optional
 import os
 import re
 import chardet
+import yaml
 from subprocess import Popen, PIPE
 
-from util import get_now as now
-from colors import COLORS
+from .util import get_now as now
+from .colors import COLORS
 
 
 # FIXME: Use log* for logging
@@ -81,7 +82,7 @@ class TexCompiler:
 tex_compiler = TexCompiler()
 
 
-def exec_command(command):
+def exec_command(command, input=None):
     print(f"Executing command : {command}")
     os.chdir(os.path.abspath(os.getcwd()))
     if command.startswith("pdflatex") or command.startswith("pdftex"):
@@ -94,8 +95,12 @@ def exec_command(command):
             print(f"Error occured while compiling file {e}")
             return False
     else:
-        p = Popen(command, stdout=PIPE, stderr=PIPE, shell=True)
-        output = p.communicate()
+        if input:
+            p = Popen(command, stdin=PIPE, stdout=PIPE, stderr=PIPE, shell=True)
+            output = p.communicate(input=input.encode())
+        else:
+            p = Popen(command, stdout=PIPE, stderr=PIPE, shell=True)
+            output = p.communicate()
         out = output[0].decode("utf-8")
         err = output[1].decode("utf-8")
         success = not p.returncode
@@ -109,7 +114,12 @@ def exec_command(command):
                 print(f"No error from command, but: {COLORS.ALT_RED}\n{err}{COLORS.ENDC}")
             return True
         else:
-            print(f"Error occured : {err}")
+            if err:
+                print(f"Error occured : {err}")
+            elif "pdflatex" in p.args or "pdftex" in p.args:
+                print(f"Got err return from pdflatex. Check log in output directory")
+            else:
+                print(f"Some unknown error reported. If all outputs seem fine, then ignore it.")
             return False
 
 
@@ -125,15 +135,18 @@ def markdown_compile(commands: Dict[str, Dict[str, Union[List[str], str]]],
     for filetype, command_dict in commands.items():
         command = command_dict["command"]
         out_file = command_dict["out_file"]
+        pandoc_opts = command_dict["in_file_opts"]
+        file_text = command_dict["text"]
+        input = "---\n".join(["", yaml.dump(pandoc_opts), file_text])
         if isinstance(command, str):
-            status = exec_command(command)
+            status = exec_command(command, input)
             if status:
                 # mark status for processing
                 postprocess.append({"in_file": md_file, "out_file": out_file})
         elif isinstance(command, list):
             statuses = []
             for com in command:
-                statuses.append(exec_command(com))
+                statuses.append(exec_command(com, input))
             if all(statuses):
                 postprocess.append({"in_file": md_file, "out_file": out_file})
     return postprocess

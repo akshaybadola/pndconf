@@ -1,9 +1,38 @@
+from typing import List, Dict, Union, Optional
 import os
 import sys
 import datetime
 import importlib
+from pathlib import Path
 
-from colors import COLORS
+from .colors import COLORS
+
+
+def update_command(command: List[str], k: str, v: str) -> None:
+    existing = [x for x in command if "--" + k in x]
+    for val in existing:
+        command.remove(val)
+    command.append(f"--{k}={v}")
+
+
+def get_csl_or_template(key: str, val: str, dir: Path):
+    v = val
+    if dir.joinpath(v).exists():
+        v = dir.joinpath(v)
+    else:
+        candidates = [x.name for x in dir.iterdir()
+                      if v in str(x)]
+        if key == "template":
+            if f"default.{v}" in candidates:
+                v = str(dir.joinpath(f"default.{v}"))
+            elif f"{v}.template" in candidates:
+                v = str(dir.joinpath(f"{v}.template"))
+        elif key == "csl":
+            if f"{v}" in candidates:
+                v = str(dir.joinpath(f"{v}"))
+            elif f"{v}.csl" in candidates:
+                v = str(dir.joinpath(f"{v}.csl"))
+    return v
 
 
 def which(program):
@@ -27,6 +56,10 @@ def which(program):
             if is_exe(exe_file):
                 return exe_file
     return None
+
+
+def expandpath(x: Union[str, Path]):
+    return Path(x).expanduser().absolute()
 
 
 # NOTE: A more generic implementation is in common_pyutil

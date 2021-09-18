@@ -1,0 +1,24 @@
+[tool.poetry]
+name = "pndconf"
+version = "0.1.0"
+description = ""
+authors = ["Akshay <akshay.badola.cs@gmail.com>"]
+license = "MIT"
+
+[tool.poetry.dependencies]
+python = "^3.7"
+watchdog = "^0.10.2"
+common-pyutil = "^0.7.2"
+chardet = "^4.0.0"
+pyyaml = "^5.4.0"
+pandoc-eqnos = "^2.5.0"
+
+[tool.poetry.scripts]
+pndconf = "pndconf.__main__:main"
+
+[tool.poetry.dev-dependencies]
+pytest = "^6.2.4"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
