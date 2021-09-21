@@ -1,6 +1,7 @@
 #! /usr/bin/python3
 
 import os
+import sys
 import time
 import shlex
 from pathlib import Path
@@ -11,14 +12,9 @@ from watchdog.observers import Observer
 from .config import Configuration
 from .watcher import ChangeHandler
 from .util import which, logd, loge, logi, logbi, logw
+from . import __version__
 
-
-# TODO: Issue warning when incompatible options are used --biblatex and
-#       pandoc-citeproc conflict e.g.
-def parse_options():
-    gentypes = ["html", "pdf", "reveal", "beamer"]
-    parser = argparse.ArgumentParser(
-        usage="""
+usage = """
     pndconf [opts] [pandoc_opts]
 
     Pandoc options must be entered in '--opt=value' format.
@@ -30,7 +26,17 @@ def parse_options():
         # To watch in some input directory and generate pdf and beamer outputs
         # to some other output directory
         pndconf -g pdf,beamer -d /path/to/watch_dir -o output_dir
-""",
+"""
+
+
+# TODO: Issue warning when incompatible options are used --biblatex and
+#       pandoc-citeproc conflict e.g.
+def parse_options():
+    """Parse command line args and validate them."""
+    gentypes = ["html", "pdf", "reveal", "beamer"]
+    description = "A config manager and file watcher for pandoc"
+    parser = argparse.ArgumentParser(
+        usage=usage,
         formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument(
         "--pandoc-path", dest="pandoc_path",
@@ -108,8 +114,13 @@ def parse_options():
         "-l", "--log-level", dest="log_level",
         default="warning",
         help="Debug Level. One of: error, warning, info, debug")
+    parser.add_argument("--version", action="store_true",
+                        help="Print version and exit")
     args = parser.parse_known_args()
 
+    if args[0].version:
+        print(f"pndconf version: {__version__}\n\n{description}")
+        sys.exit(0)
     pandoc_path = Path(args[0].pandoc_path or which("pandoc"))
     if not (pandoc_path.exists() and pandoc_path.is_file()):
         loge("pandoc executable not available. Exiting!")
@@ -156,11 +167,14 @@ def parse_options():
         excluded_folders = list(set(exclusions) - set(excluded_extensions))
         config.set_excluded_extensions(excluded_extensions)
         config.set_excluded_folders(excluded_folders)
-    assert args[0].generation is not None
+    if not args[0].generation:
+        print("Generation options cannot be empty")
+        sys.exit(1)
     diff = set(args[0].generation.split(",")) - set(gentypes)
     if diff:
         print(f"Unknown generation type {diff}")
         print(f"Choose from {gentypes}")
+        sys.exit(1)
 
     config.log_level = args[0].log_level
     if config.log_level > 2:
@@ -173,9 +187,12 @@ def parse_options():
     # NOTE: These options will override pandoc options in all the sections of
     #       the config file
     for arg in args[1]:
-        assert arg.startswith('-')
-        if arg.startswith('--'):
-            assert '=' in arg
+        if not arg.startswith('-'):
+            print(f"pandoc option {arg} must be preceded with -, e.g. -{arg} or --{arg}=some_val")
+            sys.exit(1)
+        if arg.startswith('--') and '=' not in arg:
+            print(f"pandoc option {arg} must be joined with =. e.g. {arg}=some_val")
+            sys.exit(1)
     logbi(f"Will generate for {args[0].generation.upper()}")
     logbi(f"Extra pandoc args are {args[1]}")
     config.set_generation_opts(args[0].generation.split(','), args[1])

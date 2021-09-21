@@ -2,7 +2,6 @@ from setuptools import setup
 
 from pndconf import __version__
 
-
 description = """Pandoc configuration manager, file watcher and document generator.
 
 Primarily meant for watching and converting markdown files to whatever pandoc can support."""
@@ -31,7 +30,6 @@ setup(
         "Topic :: Text Processing :: Markup",
         "Topic :: Text Processing :: Markup :: HTML",
         "Topic :: Text Processing :: Markup :: Markdown",
-        "Programming Language :: Python :: 3.6",
         "Programming Language :: Python :: 3.7",
         "Programming Language :: Python :: 3.8",
         "Programming Language :: Python :: 3.9",

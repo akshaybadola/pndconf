@@ -199,7 +199,7 @@ class Configuration:
                     v = get_csl_or_template("csl", v, check_dir)
                 else:
                     raise AttributeError(f"CSL file for {v} not found")
-            return v
+            return str(v)
 
         for ft in self._filetypes:
             command: List[str] = []

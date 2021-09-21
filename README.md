@@ -70,11 +70,20 @@ You can check the input files and the metadata there. `beamer.md` specifies the
 beamer template for generation and also `ieee` csl file. That is also included
 in the `csl` directory.
 
+# Configuration
+
+A sensible default configuration is included in the distribution but it can
+always be customized.
+
+
 # Todo
 
 - [X] Remove the settings folder from the repo. It should be standalone.
 - [X] Remove blog generator as that's a separate repo now.
 - [ ] Clean the code up
+- [ ] Better colorization possibly with colorama
+- [ ] A WSGI server for async communication
+- [ ] Add documentation of internals
+- [ ] Add tests
 - [ ] Issue warning when incompatible options are used --biblatex and
   pandoc-citeproc conflict e.g.
-
