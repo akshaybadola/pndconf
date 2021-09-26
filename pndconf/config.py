@@ -11,7 +11,7 @@ from common_pyutil.system import Semver
 from common_pyutil.functional import unique
 
 from .util import (update_command, get_csl_or_template, expandpath,
-                   load_user_module, logd, loge, logi, logbi, logw)
+                   compress_space, load_user_module, logd, loge, logi, logbi, logw)
 from .compilers import markdown_compile
 
 
@@ -22,16 +22,16 @@ StrPath = Union[str, Path]
 #
 # TODO: Pandoc input and output processing should be with a better helper and
 #       separate from config maybe
-# TODO: Exclude output dir from watch if same as watch dir
+# TODO: remove output dir from watch if same as watch dir
 class Configuration:
     def __init__(self, watch_dir: Path, output_dir: Path,
-                 config_file: Optional[Path] = None,
-                 pandoc_path: Optional[Path] = None,
-                 pandoc_version: str = "",
+                 config_file: Optional[Path],
+                 pandoc_path: Path,
+                 pandoc_version: str,
                  csl_dir: Optional[Path] = None,
                  templates_dir: Optional[Path] = None,
                  post_processor: Optional[Callable] = None,
-                 extra_opts=False):
+                 dry_run=False):
         self.watch_dir = watch_dir
         self.output_dir = output_dir
         self.pandoc_path = pandoc_path
@@ -43,13 +43,14 @@ class Configuration:
         self._conf = configparser.ConfigParser()
         self._conf.optionxform = str
         self._conf.read(self._config_file)
-        self._excluded_regexp = []
-        self._excluded_extensions = []
-        self._excluded_folders = []
-        self._included_extensions = []
-        self._excluded_files = []
-        self._use_extra_opts = extra_opts
-        self._extra_opts = {"latex-preproc": None}
+        self._excluded_regexp: List[str] = []
+        self._excluded_extensions: List[str] = []
+        self._excluded_folders: List[str] = []
+        self._included_extensions: List[str] = []
+        self._excluded_files: List[str] = []
+        self.dry_run = dry_run
+        # self._use_extra_opts = extra_opts
+        # self._extra_opts = {"latex-preproc": None}
         self._debug_levels = ["error", "warning", "info", "debug"]
 
     @property
@@ -76,16 +77,17 @@ class Configuration:
             self.post_processor = None
 
     @property
-    def watch_dir(self) -> Path:
+    def watch_dir(self) -> Optional[Path]:
         return self._watch_dir
 
     @watch_dir.setter
     def watch_dir(self, x: StrPath):
-        x = Path(x).expanduser().absolute()
-        if x.exists() and x.is_dir():
-            self._watch_dir = x
-        else:
-            loge(f"Could not set watch_dir {x}. Directory doesn't exist")
+        if x:
+            x = Path(x).expanduser().absolute()
+            if x.exists() and x.is_dir():
+                self._watch_dir = x
+            else:
+                loge(f"Could not set watch_dir {x}. Directory doesn't exist")
 
     @property
     def output_dir(self) -> Path:
@@ -105,6 +107,8 @@ class Configuration:
 
     @pandoc_path.setter
     def pandoc_path(self, x: StrPath):
+        if not x:
+            raise ValueError("pandoc path cannot be empty")
         x = Path(x).expanduser().absolute()
         if x.exists() and x.is_file():
             self._pandoc_path = x
@@ -135,7 +139,7 @@ class Configuration:
         self._filetypes = filetypes
         if pandoc_options:
             for section in filetypes:
-                for opt in pandoc_options:
+                for i, opt in enumerate(pandoc_options):
                     if opt.startswith('--') and "=" in opt:
                         opt_key, opt_value = opt.split('=')
                         if opt_key == "--filter":
@@ -143,6 +147,11 @@ class Configuration:
                                                                      opt_value])
                         else:
                             self._conf[section][opt_key] = opt_value
+                    elif opt == "-V":
+                        val = pandoc_options[i+1]
+                        existing = self._conf[section].get(opt, "")
+                        self._conf[section][opt] = ",".join([*existing.split(","), val])\
+                            if existing else val
                     else:
                         self._conf[section][opt] = ''
 
@@ -167,8 +176,12 @@ class Configuration:
         try:
             with open(in_file, 'r') as f:
                 splits = f.read().split('---', maxsplit=3)
-                in_file_pandoc_opts = yaml.load(splits[1], Loader=yaml.FullLoader)
-                in_file_text = splits[2]
+                if len(splits) == 3:
+                    in_file_pandoc_opts = yaml.load(splits[1], Loader=yaml.FullLoader)
+                    in_file_text = splits[2]
+                else:
+                    in_file_pandoc_opts = {}
+                    in_file_text = splits[0]
         except Exception as e:
             loge(f"Yaml parse error {e}. Will not compile.")
             return None
@@ -228,8 +241,8 @@ class Configuration:
                         # command.append(f"{k}={v}")
                         if k[2:] == 'filter':
                             self.add_filters(command, k, v)
-                    elif k[2:] in self._extra_opts:
-                        self._extra_opts[k[2:]] = v
+                    # elif k[2:] in self._extra_opts:
+                    #     self._extra_opts[k[2:]] = v
                     else:
                         if k[2:] == 'filter':
                             self.add_filters(command, k, v)
@@ -248,21 +261,18 @@ class Configuration:
             # command_str = " ".join([str(self.pandoc_path), ' '.join(command), in_file])
             command = []
             if ft == 'pdf':
-                # FIXME: Bad hack for doing a regexp after latex generation
-                if self._extra_opts["latex-preproc"] and self._use_extra_opts:
-                    command = [command_str, self._extra_opts["latex-preproc"] + " " +
-                               f"{out_path_no_ext}.tex"]
-                else:
-                    command = [command_str]
+                command = [command_str]
                 if "-o" in self._conf[ft] and self._conf[ft]["-o"] != "pdf":
                     command.append(f"cd {Path(out_path_no_ext).parent} && mkdir -p {out_path_no_ext}_files")
                     command.append(f"cd {Path(out_path_no_ext).parent} && {pdflatex}")
                     out_file = str(Path(out_path_no_ext + '_files').joinpath(filename_no_ext + ".pdf"))
                 else:
                     out_file = out_path_no_ext + ".pdf"
-            commands[ft] = {"command": command or command_str, "in_file": in_file,
+            cmd = [*map(compress_space, command)] if command else compress_space(command_str)
+            commands[ft] = {"command": cmd,
+                            "in_file": in_file,
                             "out_file": out_file, "in_file_opts": in_file_pandoc_opts,
-                            "text": splits[2]}
+                            "text": in_file_text}
         return commands
 
     def set_included_extensions(self, included_file_extensions):
@@ -275,14 +285,14 @@ class Configuration:
         self._excluded_regexp = e
         self._exclude_ignore_case = ignore_case
 
-    def set_excluded_files(self, excluded_files):
+    def set_excluded_files(self, excluded_files: List[str]):
         self._excluded_files = excluded_files
 
-    def set_excluded_folders(self, excluded_folders):
+    def set_excluded_folders(self, excluded_folders: List[str]):
         self._excluded_folders = excluded_folders
 
     # is_watched requires full relative filepath
-    def is_watched(self, filepath):
+    def is_watched(self, filepath: str):
         watched = False
         for ext in self._included_extensions:
             if filepath.endswith(ext):
@@ -298,7 +308,8 @@ class Configuration:
                 watched = False
         for regex in self._excluded_regexp:
             flags = re.IGNORECASE if self._exclude_ignore_case else 0
-            if re.findall(regex, filepath, flags=flags):
+            reg = '.*' + regex + '.*'
+            if re.findall(reg, filepath, flags=flags):
                 watched = False
         return watched
 
@@ -307,29 +318,46 @@ class Configuration:
 
     # CHECK: Should be cached maybe?
     def get_watched(self) -> List[str]:
-        all_files = glob(str(self.watch_dir.joinpath('**')), recursive=True)
+        if self.watch_dir:
+            all_files = glob(str(self.watch_dir.joinpath('**')), recursive=True)
+        else:
+            raise AttributeError("Watch dir is not defined")
         elements = [f for f in all_files if self.is_watched(f)]
         return elements
 
-    def compile_files(self, md_files):
-        """This function logs the compilation and calls the post_processor if it
-        exists.
+    def compile_files(self, md_files: Union[str, List[str]]):
+        """Compile files and call the post_processor if it exists.
+
+        Args:
+            md_files: The markdown files to compile
+
         """
-        post = []
+        post: List[Dict[str, str]] = []
         commands = None
+
+        def compile_or_warn(cmds, mdf, post):
+            if self.dry_run:
+                for k, v in cmds.items():
+                    cmd = "\n\t".join(v['command']) if isinstance(v['command'], list)\
+                        else v['command']
+                    logbi(f"Not compiling {mdf} to {k} with \n\t{cmd}\nas dry run.")
+            else:
+                if self.log_level > 2:
+                    logbi(f"Compiling: {mdf}")
+                post.append(markdown_compile(cmds, mdf))
+
         if md_files and isinstance(md_files, str):
-            if self.log_level > 2:
-                logbi(f"Compiling: {md_files}")
             commands = self.get_commands(md_files)
             if commands is not None:
-                post.append(markdown_compile(commands, md_files))
+                compile_or_warn(commands, md_files, post)
         elif isinstance(md_files, list):
             for md_file in md_files:
                 commands = self.get_commands(md_file)
-                if self.log_level > 2:
-                    logbi(f"Compiling: {md_file}")
                 if commands is not None:
-                    post.append(markdown_compile(commands, md_file))
+                    compile_or_warn(commands, md_file, post)
         if commands and self.post_processor and post:
-            logbi("Calling post_processor")
-            self.post_processor(post)
+            if self.dry_run:
+                logbi("Not calling post_processor as dry run.")
+            else:
+                logbi("Calling post_processor")
+                self.post_processor(post)

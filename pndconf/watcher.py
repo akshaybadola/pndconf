@@ -4,7 +4,7 @@ from pathlib import Path
 
 from watchdog.events import FileSystemEvent, FileSystemEventHandler
 
-from .util import logd, loge, logi, logbi, logw
+from .util import logd, loge, logi, logbi, logw, Debounce
 
 
 class ChangeHandler(FileSystemEventHandler):
@@ -13,15 +13,17 @@ class ChangeHandler(FileSystemEventHandler):
     ChangeHandler fires the commands corresnponding to the event and the
     Configuration instance `config`
     """
-    def __init__(self, root: Path, is_watched: Callable[[Path], bool],
+    def __init__(self, root: Path, is_watched: Callable[[str], bool],
                  get_watched: Callable[[], List[Path]],
-                 compile_func: Callable[[List[Path]], None],
+                 compile_func: Callable[[Union[str, List[str]]], None],
                  log_level: int):
         self.root = root
         self.is_watched = is_watched
         self.get_watched = get_watched
         self.compile_files = compile_func
         self.log_level = log_level
+        self.debounce = Debounce(3000)
+        self.count = 0
 
     # NOTE: DEBUG
     # def on_any_event(self, event):
@@ -40,21 +42,27 @@ class ChangeHandler(FileSystemEventHandler):
 
     def on_modified(self, event: FileSystemEvent):
         "Event fired when a file is modified"
-        if self.log_level > 2:
-            logd(f"File {event.src_path} modified")
-        md_files = self.get_md_files(event.src_path)
-        if self.log_level > 2:
-            logd(f"DEBUG: {md_files}")
-        if md_files:
-            self.compile_stuff(md_files)
+        src_path = event.src_path
+        # NOTE: Hack around bug in watchdog where file modified event is called
+        #       twice on a single modification or some reason
+        src_path = self.debounce(src_path)
+        if src_path:
+            if self.log_level > 2:
+                logd(f"File {src_path} modified")
+            md_files = self.get_md_files(src_path)
+            if self.log_level > 2:
+                logd(f"DEBUG: {md_files}")
+            if md_files:
+                self.count += 1
+                # print(md_files, self.count)
+                self.compile_stuff(md_files)
 
     # NOTE: Maybe rename this function
     def compile_stuff(self, md_files: Union[str, List[str]]) -> None:
         "Compile if required when an event is fired"
-        # NOTE:
-        # The assumption below should not be on the type of variable
-        # Though assumption is actually valid as there's only a
-        # single file at a time which is checked
+        # NOTE: The assumption below should not be on the type of variable
+        #       Though assumption is actually valid as there's only a
+        #       single file at a time which is checked
         self.compile_files(md_files)
         logbi("Done\n")
 

@@ -40,7 +40,7 @@ setup(
     keywords='pandoc markdown watcher',
     python_requires=">=3.7, <=4.0",
     install_requires=[
-        "watchdog>=0.10.2",
+        "watchdog>=2.1.5",
         "common-pyutil>=0.7.2",
         "chardet>=4.0.x",
         "pyyaml==5.4.x",

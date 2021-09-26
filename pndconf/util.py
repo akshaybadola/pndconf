@@ -1,11 +1,56 @@
 from typing import List, Dict, Union, Optional
+import re
 import os
 import sys
+import time
 import datetime
 import importlib
 from pathlib import Path
 
 from .colors import COLORS
+
+
+class Debounce:
+    # Should we instead make a class where all events are timed?
+    def __init__(self, interval=10):
+        self.interval = interval / 1000
+        self._reset()
+
+    def _reset(self):
+        self.start = 0
+        self.started = False
+
+    def _start(self):
+        self.start = time.time()
+        self.objects = set()
+        self.started = True
+
+    def __call__(self, x):
+        if not self.started:
+            self._start()
+        diff = (time.time() - self.start)
+        if self.started and diff < self.interval:
+            if x in self.objects:
+                return None
+            else:
+                self.objects.add(x)
+                # print(self.interval)
+                # print(f"WILL RETURN {x} as NEW OBJECT after", time.time() - self.start)
+                # if x.endswith(".md"):
+                #     print(self.objects, x)
+                return x
+        else:
+            self._start()
+            self.objects.add(x)
+            # print(self.interval)
+            # print(f"WILL RETURN {x} as TIMEOUT after", time.time() - self.start)
+            # if x.endswith(".md"):
+            #     print(self.objects, x)
+            return x
+
+
+def compress_space(x: str):
+    return re.sub(" +", " ", x)
 
 
 def update_command(command: List[str], k: str, v: str) -> None:
