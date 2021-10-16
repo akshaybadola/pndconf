@@ -1,4 +1,6 @@
 class COLORS:
+    """Color codes for terminal colors
+    """
     RED = '\033[31m'
     ALT_RED = '\033[91m'
     BRIGHT_RED = '\033[1;31m'

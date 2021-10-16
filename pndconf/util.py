@@ -6,6 +6,10 @@ import time
 import datetime
 import importlib
 from pathlib import Path
+from subprocess import Popen, PIPE
+
+import bibtexparser
+from bibtexparser import bparser, bwriter
 
 from .colors import COLORS
 
@@ -49,6 +53,61 @@ class Debounce:
             return x
 
 
+def generate_bibtex(in_file: Path, metadata: Dict, text: str, pandoc_path: Path):
+    """Generate bibtex for markdown file.
+
+    Args:
+        in_file: input file
+        references: Metadata for the file including bibliography files and
+                    references in the metadata
+
+    The bibtex file is generated in the same directory as `in_file` with a
+    ".bib" suffix.
+
+    """
+    out_file = in_file.parent.joinpath(in_file.stem + ".bib")
+    bib_files = metadata["bibliography"]
+    splits = []
+    for bf in bib_files:
+        with open(bf) as f:
+            temp = f.read()
+            splits.extend([*filter(None, re.split(r'(@.+){', temp))])
+    entries = {}
+    for i in range(0, len(splits), 2):
+        key = splits[i+1].split(",")[0]
+        entries[key] = splits[i] + "{" + splits[i+1]
+    bibs = []
+    bib_keys = re.findall(r'\[@(.+?)\]', text)
+    for k in bib_keys:
+        if k in entries:
+            bibs.append(entries[k])
+    parser = bparser.BibTexParser(common_strings=True)
+    # writer = bwriter.BibTexWriter(write_common_strings=True)
+    # writer._entry_to_bibtex(bib_all.entries_dict['ioffe2015batch'])
+    try:
+        parser.parse("\n".join(bibs))
+    except Exception:
+        msg = "Error while parsing bibtexs. Check sources."
+        raise ValueError(msg)
+    p = Popen(f"{pandoc_path} -r markdown -s -t biblatex {in_file}",
+              shell=True, stdout=PIPE, stderr=PIPE)
+    out, err = p.communicate()
+    with open(out_file, "w") as f:
+        f.write("".join(bibs))
+        f.write(out.decode("utf-8"))
+    metadata["bibliography"] = [str(out_file)]
+    # for bf in bib_files:
+    #     with open(bf) as f:
+    #         entries[bf] = parser.parse_file(f)
+    # dump = {}
+    # for k in bib_keys:
+    #     for ent in entries.values():
+    #         if k in ent.entries_dict:
+    #             dump[k] = ent.entries_dict[k]
+    #             continue
+
+
+
 def compress_space(x: str):
     return re.sub(" +", " ", x)
 
@@ -63,7 +122,7 @@ def update_command(command: List[str], k: str, v: str) -> None:
 def get_csl_or_template(key: str, val: str, dir: Path):
     v = val
     if dir.joinpath(v).exists():
-        v = dir.joinpath(v)
+        v = str(dir.joinpath(v))
     else:
         candidates = [x.name for x in dir.iterdir()
                       if v in str(x)]
@@ -128,27 +187,32 @@ def loge(message, newline=True):
     "Log Error message"
     end = "\n" if newline else ""
     print(f"{COLORS.BRIGHT_RED}{message}{COLORS.ENDC}", end=end)
+    return message
 
 
 def logw(message, newline=True):
     "Log Warning message"
     end = "\n" if newline else ""
     print(f"{COLORS.ALT_RED}{message}{COLORS.ENDC}", end=end)
+    return message
 
 
 def logd(message, newline=True):
     "Log Debug message"
     end = "\n" if newline else ""
     print(message, end=end)
+    return message
 
 
 def logi(message, newline=True):
     "Log Info message"
     end = "\n" if newline else ""
     print(message, end=end)
+    return message
 
 
 def logbi(message, newline=True):
     "Log Info message"
     end = "\n" if newline else ""
     print(f"{COLORS.BLUE}{message}{COLORS.ENDC}", end=end)
+    return message

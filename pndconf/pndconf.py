@@ -37,6 +37,7 @@ def parse_options():
     description = "A config manager and file watcher for pandoc"
     parser = argparse.ArgumentParser(
         usage=usage,
+        allow_abbrev=False,
         formatter_class=argparse.RawDescriptionHelpFormatter)
     # NOTE: While we can use parse_known_intermixed_args, it leads to unexpected results
     # parser.add_argument(
@@ -67,6 +68,9 @@ def parse_options():
     parser.add_argument(
         "--no-exclude-ignore-case", action="store_false", dest="exclude_ignore_case",
         help="Whether the exclude regexp should ignore case or not.")
+    parser.add_argument(
+        "--no-citeproc", action="store_true", dest="no_citeproc",
+        help="Whether to process the citations via citeproc.")
     parser.add_argument(
         "--dry-run", "-n", action="store_true",
         help="Dry run. Don't actually do anything.")
@@ -112,6 +116,9 @@ def parse_options():
         action="store_true",
         help="Print pandoc options and exit")
     parser.add_argument(
+        "-pf", "--print-generation-opts",
+        help="Print pandoc options for filetype (e.g., for 'pdf') and exit")
+    parser.add_argument(
         "-L", "--log-file", dest="log_file",
         type=str,
         default="",
@@ -136,8 +143,15 @@ def parse_options():
         args.watch_dir = Path(args.watch_dir)
     pandoc_path = Path(args.pandoc_path or which("pandoc"))
     if not (pandoc_path.exists() and pandoc_path.is_file()):
-        loge("pandoc executable not available. Exiting!")
+        loge("'pandoc' executable not available.\n" +
+             "Please install pandoc. Exiting!")
         exit(1)
+    try:
+        pandoc_version = Popen(shlex.split(f"{pandoc_path} --version"), stdout=PIPE).\
+            communicate()[0].decode("utf-8").split()[1]
+    except Exception as e:
+        loge(f"Error checking pandoc version {e}")
+        sys.exit(1)
     if args.print_pandoc_opts:
         out, err = Popen([str(pandoc_path), "--help"], stdout=PIPE, stderr=PIPE).communicate()
         out = out.decode("utf-8")
@@ -147,21 +161,24 @@ def parse_options():
         else:
             loge(f"Pandoc options are \n{out}")
         exit(0)
-    try:
-        pandoc_version = Popen(shlex.split(f"{pandoc_path} --version"), stdout=PIPE).\
-            communicate()[0].decode("utf-8").split()[1]
-    except Exception as e:
-        loge(f"Error checking pandoc version {e}")
-        sys.exit(1)
     logi(f"Pandoc path is {pandoc_path}")
     config = Configuration(args.watch_dir, args.output_dir,
                            config_file=args.config_file,
                            pandoc_path=pandoc_path,
                            pandoc_version=pandoc_version,
+                           no_citeproc=args.no_citeproc,
                            csl_dir=args.csl_dir,
                            templates_dir=args.templates_dir,
                            post_processor=args.post_processor,
                            dry_run=args.dry_run)
+    # FIXME: No other args should be given with this
+    if ft := args.print_generation_opts:
+        if ft in config._conf:
+            opts = config._conf[ft]
+            logi(f"Generation options for {ft} are:\n{[*opts.items()]}")
+            sys.exit(0)
+        else:
+            loge(f"No generation options for {ft}")
     # NOTE: The program assumes that extensions startwith '.'
     if args.exclude_regexp:
         logi("Excluding files for given filters",
@@ -213,7 +230,7 @@ def parse_options():
             sys.exit(1)
     logbi(f"Will generate for {args.generation.upper()}")
     logbi(f"Extra pandoc args are {extra}")
-    config.set_generation_opts(args.generation.split(','), extra)
+    config.set_cmdline_opts(args.generation.split(','), extra)
     logi(f"Generation options are \n{config.generation_opts}")
     # CHECK: should it be like this?
     return config, args.run_once, args.input_files.split(",")

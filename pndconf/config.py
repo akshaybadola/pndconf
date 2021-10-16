@@ -11,11 +11,63 @@ from common_pyutil.system import Semver
 from common_pyutil.functional import unique
 
 from .util import (update_command, get_csl_or_template, expandpath,
-                   compress_space, load_user_module, logd, loge, logi, logbi, logw)
+                   generate_bibtex, compress_space, load_user_module,
+                   logd, loge, logi, logbi, logw)
 from .compilers import markdown_compile
 
 
 StrPath = Union[str, Path]
+
+
+def csl_subr(v: str, csl_dir: Optional[Path], in_file: str):
+    """Subroutine to get file name from csl name.
+
+    Args:
+        v: String value representing CSL
+
+    `v` can be a full path, a relative path or simply a string sans
+    extension. Its existence is checked in order:
+    full_path > self.csl_dir > relative_path
+
+    Where relative_path is the path relative to input file
+
+    """
+    if Path(v).exists():
+        v = expandpath(v)
+    elif csl_dir:
+        v = get_csl_or_template("csl", v, csl_dir)
+    elif "csl" in [x.name for x in Path(in_file).parent.iterdir()]:
+        check_dir = Path(in_file).parent.joinpath("csl").absolute()
+        v = get_csl_or_template("csl", v, check_dir)
+    else:
+        raise AttributeError(f"CSL file for {v} not found")
+    return str(v)
+
+
+def template_subr(v: str, templates_dir: Optional[Path], in_file: str):
+    if Path(v).exists():
+        v = expandpath(v)
+    elif templates_dir:
+        v = get_csl_or_template("template", v, templates_dir)
+    elif "templates" in [x.name for x in Path(in_file).parent.iterdir()]:
+        check_dir = Path(in_file).parent.joinpath("templates").absolute()
+        v = get_csl_or_template("template", v, check_dir)
+    else:
+        raise AttributeError(f"Template file for {v} not found")
+    return str(v)
+
+
+def update_in_file_paths(in_file_pandoc_opts: Dict[str, str], csl_dir: Optional[Path],
+                         templates_dir: Optional[Path], in_file: str):
+    if "csl" in in_file_pandoc_opts:
+        v = csl_subr(in_file_pandoc_opts["csl"], csl_dir, in_file)
+        in_file_pandoc_opts["csl"] = v
+    if "template" in in_file_pandoc_opts:
+        v = template_subr(in_file_pandoc_opts["template"], templates_dir, in_file)
+        in_file_pandoc_opts["template"] = v
+    for k, v in in_file_pandoc_opts.items():
+        if isinstance(v, str) and v.startswith("./"):
+            in_file_pandoc_opts[k] = str(Path(in_file).parent.absolute().joinpath(v))
 
 
 # CHECK: What should configuration hold?
@@ -28,6 +80,7 @@ class Configuration:
                  config_file: Optional[Path],
                  pandoc_path: Path,
                  pandoc_version: str,
+                 no_citeproc: Optional[bool],
                  csl_dir: Optional[Path] = None,
                  templates_dir: Optional[Path] = None,
                  post_processor: Optional[Callable] = None,
@@ -36,10 +89,12 @@ class Configuration:
         self.output_dir = output_dir
         self.pandoc_path = pandoc_path
         self.pandoc_version = Semver(pandoc_version)
+        self.no_citeproc = no_citeproc
         self.csl_dir = csl_dir and Path(csl_dir).absolute()
         self.templates_dir = templates_dir and Path(templates_dir).absolute()
         self._config_file = config_file or Path(__file__).parent.joinpath("config_default.ini")
         self._post_processor = post_processor
+        self._cmdline_opts: Dict[str, str] = {}
         self._conf = configparser.ConfigParser()
         self._conf.optionxform = str
         self._conf.read(self._config_file)
@@ -128,31 +183,48 @@ class Configuration:
         else:
             self._debug_level = 0
 
-    def set_generation_opts(self, filetypes: List[str], pandoc_options: List[str]) -> None:
-        """Populate the config `self._conf` with generation options.
+    @property
+    def cmdline_opts(self) -> Dict[str, str]:
+        return self._cmdline_opts
+
+    def set_cmdline_opts(self, filetypes: List[str], pandoc_options: List[str]) -> None:
+        """Update the config :code:`self._conf` with options from command line.
 
         Args:
             filetypes: The filetypes for which required to generate
-            pandoc_options: A list of extra pandoc options. These options
-                            will override any options present in the config file.
+            pandoc_options: A list of pandoc options. These options will override
+                            any options present in the config file
+                            or those mentioned in the yaml header inside the file.
+
+        However, if multiple options like \"--filter\" or \"-V\" are provided
+        then they are merged with existing options. In effect filters can be
+        added but not removed. This may change in future versions of this
+        module.
+
         """
         self._filetypes = filetypes
         if pandoc_options:
             for section in filetypes:
                 for i, opt in enumerate(pandoc_options):
-                    if opt.startswith('--') and "=" in opt:
-                        opt_key, opt_value = opt.split('=')
-                        if opt_key == "--filter":
-                            self._conf[section][opt_key] = ",".join([self._conf[section][opt_key],
-                                                                     opt_value])
-                        else:
-                            self._conf[section][opt_key] = opt_value
-                    elif opt == "-V":
+                    if opt == "-V":
                         val = pandoc_options[i+1]
                         existing = self._conf[section].get(opt, "")
                         self._conf[section][opt] = ",".join([*existing.split(","), val])\
                             if existing else val
-                    else:
+                        existing = self._cmdline_opts.get("-V", "")
+                        self._cmdline_opts["-V"] = ",".join([*existing.split(","), val])\
+                            if existing else val
+                    elif opt.startswith('--') and "=" in opt:
+                        opt_key, opt_value = opt.split('=')
+                        if opt_key == "--filter":
+                            self._conf[section][opt_key] = ",".join([self._conf[section][opt_key],
+                                                                     opt_value])
+                            self._cmdline_opts[opt_key] = ",".join([self._cmdline_opts[opt_key],
+                                                                    opt_value])
+                        else:
+                            self._conf[section][opt_key] = opt_value
+                            self._cmdline_opts[opt_key[2:]] = opt_value
+                    elif opt.startswith("-"):
                         self._conf[section][opt] = ''
 
     @property
@@ -164,12 +236,31 @@ class Configuration:
         vals = unique(v.split(","))
         if vals[0]:
             for val in vals:
-                command.append(k + '=' + val)
+                command.append(f"--{k}={val}")
 
     # TODO: should be a better way to compile with pdflatex
     # TODO: User defined options should override the default ones and the file ones
     def get_commands(self, in_file: str) ->\
             Optional[Dict[str, Dict[str, Union[List[str], str]]]]:
+        """Get pandoc commands for various output formats for input file `in_file`.
+
+        Args:
+            in_file: Input file name
+
+
+        Pandoc options can be specified via:
+        a. Configuration file
+        b. In the optional yaml header inside the file
+        c. Options on the command line
+
+        For the options the following precedence holds:
+
+        command_line > in_file > config
+
+        That is, options in command line will overwrite those in yaml header and
+        they'll overwrite those in configuration file.
+
+        """
         # TODO: The following should be replaced with separate tests
         # assert in_file.endswith('.md')
         # assert self._filetypes
@@ -193,78 +284,88 @@ class Configuration:
                    + ' -interaction=nonstopmode '\
                    + '--synctex=1 ' + out_path_no_ext + '.tex'
 
-        def csl_templates_subr(k, v):
-            if Path(v).exists():
-                v = expandpath(v)
-            if "template" in k:
-                if self.templates_dir:
-                    v = get_csl_or_template("template", v, self.templates_dir)
-                elif "templates" in [x.name for x in Path(in_file).parent.iterdir()]:
-                    check_dir = Path(in_file).parent.joinpath("templates").absolute()
-                    v = get_csl_or_template("template", v, check_dir)
-                else:
-                    raise AttributeError(f"Template file for {v} not found")
-            elif "csl" in k:
-                if self.csl_dir:
-                    v = get_csl_or_template("csl", v, self.csl_dir)
-                elif "csl" in [x.name for x in Path(in_file).parent.iterdir()]:
-                    check_dir = Path(in_file).parent.joinpath("csl").absolute()
-                    v = get_csl_or_template("csl", v, check_dir)
-                else:
-                    raise AttributeError(f"CSL file for {v} not found")
-            return str(v)
-
+        # TODO: The commands should be validated
+        #
+        #       E.g: Say "-V colors=true" is given from
+        #       config and "V colors=false" is given from cmdline
+        #       cmdline should override the earlier one.
         for ft in self._filetypes:
             command: List[str] = []
-            if "csl" in in_file_pandoc_opts:
-                v = csl_templates_subr("csl", in_file_pandoc_opts["csl"])
-                in_file_pandoc_opts["csl"] = v
-                # update_command(command, "csl", v)
-            if "template" in in_file_pandoc_opts:
-                v = csl_templates_subr("template", in_file_pandoc_opts["template"])
-                in_file_pandoc_opts["template"] = v
-                # update_command(command, "template", v)
-            for k, v in in_file_pandoc_opts.items():
-                if isinstance(v, str) and v.startswith("./"):
-                    in_file_pandoc_opts[k] = str(Path(in_file).parent.absolute().joinpath(v))
+            update_in_file_paths(in_file_pandoc_opts, self.csl_dir, self.templates_dir, in_file)
             for k, v in self._conf[ft].items():
-                if k == '-V':
-                    split_vals = v.split(',')
-                    for val in split_vals:
-                        command.append('-V ' + val.strip())
+                if k == '-M':
+                    msg = loge("Metadata field setting is not supported")
+                    raise AttributeError(msg)
+                elif k == '-V':
+                    cmdline_template_keys = [x.split('=')[0]
+                                             for x in self.cmdline_opts.get("-V", "").split(",")
+                                             if x]
+                    conf_template_keys = [x.split('=')[0]
+                                          for x in self._conf[ft].get("-V", "").split(",")
+                                          if x]
+                    config_keys = set(conf_template_keys) - set(cmdline_template_keys)
+                    template_vars = set()
+                    for x in v.split(","):
+                        val = f"-V {x.strip()}"
+                        tvar = x.strip().split("=")[0]
+                        if tvar in config_keys and tvar in in_file_pandoc_opts:
+                            continue
+                        if tvar in template_vars:
+                            msg = f"{tvar} being overridden"
+                            logw(msg)
+                        template_vars.add(tvar)
+                        if val not in command:
+                            command.append(val)
                 elif k.startswith('--'):
-                    if "template" in k or "csl" in k:
-                        v = csl_templates_subr(k, v)
-                    if k[2:] in in_file_pandoc_opts:
-                        v = in_file_pandoc_opts[k[2:]]
-                        update_command(command, "template", v)
-                        # command.append(f"{k}={v}")
-                        if k[2:] == 'filter':
-                            self.add_filters(command, k, v)
-                    # elif k[2:] in self._extra_opts:
-                    #     self._extra_opts[k[2:]] = v
+                    # pandoc options, warn if override
+                    k = k[2:]
+                    if k == "template":
+                        v = template_subr(v, self.templates_dir, in_file)
+                    elif k == "csl":
+                        v = csl_subr(v, self.csl_dir, in_file)
+                    if k == "filter":
+                        self.add_filters(command, k, v)
                     else:
-                        if k[2:] == 'filter':
-                            self.add_filters(command, k, v)
+                        if k in in_file_pandoc_opts:
+                            if k in self.cmdline_opts:
+                                command.append(f"--{k}={v}" if v else k)
                         else:
-                            command.append(f"{k}={v}" if v else k)
+                            command.append(f"--{k}={v}" if v else k)
                 else:
                     if k == '-o':
                         out_file = out_path_no_ext + "." + v
-                        command.append(k + ' ' + out_file)
+                        command.append(f"{k} {out_file}")
                     else:
-                        command.append(k + (' ' + v) if v else '')
-            if self.pandoc_version.geq("2.12") and "--filter=pandoc-citeproc" in command:
+                        command.append(f"{k} {v}" if v else f"{k}")
+            if self.no_citeproc and "--filter=pandoc-citeproc" in command:
                 command.remove("--filter=pandoc-citeproc")
-                command.insert(0, "--citeproc")
+            else:
+                if self.pandoc_version.geq("2.12") and "--filter=pandoc-citeproc" in command:
+                    command.remove("--filter=pandoc-citeproc")
+                    if not self.no_citeproc:
+                        command.insert(0, "--citeproc")
+            if self.no_citeproc:
+                if all([x not in command
+                        for x in ["--natbib", "--biblatex", "-V natbib", "-V biblatex"]]):
+                    msg = "Not using citeproc and no other citation processor given. " +\
+                        "Will use bibtex as default."
+                    logw(msg)
+                    command.append("--biblatex")
+                if "references" in in_file_pandoc_opts:
+                    generate_bibtex(Path(in_file), in_file_pandoc_opts,
+                                    in_file_text, self.pandoc_path)
             command_str = " ".join([str(self.pandoc_path), ' '.join(command)])
-            # command_str = " ".join([str(self.pandoc_path), ' '.join(command), in_file])
             command = []
             if ft == 'pdf':
                 command = [command_str]
                 if "-o" in self._conf[ft] and self._conf[ft]["-o"] != "pdf":
                     command.append(f"cd {Path(out_path_no_ext).parent} && mkdir -p {out_path_no_ext}_files")
                     command.append(f"cd {Path(out_path_no_ext).parent} && {pdflatex}")
+                    # NOTE: biber and pdflatex again if no citeproc
+                    if self.no_citeproc:
+                        biber = f"biber {out_path_no_ext}_files/{filename_no_ext}.bcf"
+                        command.append(f"cd {Path(out_path_no_ext).parent} && {biber}")
+                        command.append(f"cd {Path(out_path_no_ext).parent} && {pdflatex}")
                     out_file = str(Path(out_path_no_ext + '_files').joinpath(filename_no_ext + ".pdf"))
                 else:
                     out_file = out_path_no_ext + ".pdf"

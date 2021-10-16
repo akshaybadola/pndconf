@@ -22,6 +22,93 @@ class TexCompiler:
     def __init__(self, env_vars: str = ""):
         self.log_file_encoding = "ISO-8859-1"
         self.env_vars = env_vars
+        self.mode = "latex"
+        # TODO: Change with re matches
+        self.messages = {"latex":
+                         {"info": "*",
+                          "warn": "warning",
+                          "error": "error",
+                          "fatal": "fatal"},
+                         "biber":
+                         {"info": "INFO",
+                          "warn": "WARN",
+                          "error": "ERROR",
+                          "fatal": "ERROR"}}
+
+    @property
+    def cmdname(self) -> str:
+        return "pdflatex" if self.mode == "latex" else "biber"
+
+    @property
+    def info(self) -> str:
+        return self.messages[self.mode]["warn"]
+
+    @property
+    def warning(self) -> str:
+        return self.messages[self.mode]["warn"]
+
+    @property
+    def error(self) -> str:
+        return self.messages[self.mode]["error"]
+
+    @property
+    def fatal(self) -> str:
+        return self.messages[self.mode]["fatal"]
+
+    def get_paras(self, out: str) -> List[str]:
+        if self.mode == "latex":
+            retval = out.split("\n\n")
+        elif self.mode == "biber":
+            retval = out.split("\n")
+        return retval
+
+    # TODO: Should be changed with predicate replacements
+    def get_colored(self, paras, text, cc) -> List[str]:
+        """Return colored fatal text from :code:`paras`
+
+        Args:
+            paras: List of strings
+            text: Text to colorize
+            cc: Color Code
+
+        See :class:`COLORS` for the color codes
+
+        """
+        endc = COLORS.ENDC
+        return [x.replace(text.capitalize(), cc + text.capitalize() + endc)
+                .replace(text, cc + text + endc)
+                for x in paras if text.lower() in x.lower()]
+
+    # TODO: Should change with predicates
+    def get_warnings(self, paras) -> List[str]:
+        """Return colored warnings from :code:`paras`
+
+        Args:
+            paras: List of strings split from output of command
+
+        """
+        cc = COLORS.ALT_RED
+        return self.get_colored(paras, self.warning, cc)
+
+    def get_errors(self, paras) -> List[str]:
+        """Return colored errors from :code:`paras`
+
+        Args:
+            paras: List of strings split from output of command
+
+        """
+        cc = COLORS.BRIGHT_RED
+        return self.get_colored(paras, self.error, cc)
+
+    def get_fatal(self, paras) -> List[str]:
+        """Return colored fatal messages from :code:`paras`
+
+        Args:
+            paras: List of strings split from output of command
+
+        """
+        cc = COLORS.BRIGHT_RED
+        return self.get_colored(paras, self.fatal, cc)
 
     def compile(self, command: str) -> bool:
         """Compile with `command`
@@ -43,22 +130,17 @@ class TexCompiler:
             ind: Optional[int] = inds[0]
         else:
             ind = None
-        paras = out.split("\n\n")
-        warnings = [x.replace("Warning", COLORS.ALT_RED + "Warning" + COLORS.ENDC)
-                    for x in paras if "Warning" in x]
-        errors = [x.replace("Error", COLORS.BRIGHT_RED + "Error" + COLORS.ENDC).
-                  replace("error", COLORS.BRIGHT_RED + "error" + COLORS.ENDC)
-                  for x in paras if "Error" in x or "error" in x]
-        fatal = [x.replace("Fatal", COLORS.BRIGHT_RED + "Fatal" + COLORS.ENDC).
-                 replace("fatal", COLORS.BRIGHT_RED + "fatal" + COLORS.ENDC)
-                 for x in paras if "fatal" in x.lower()]
+        paras = self.get_paras(out)
+        warnings = self.get_warnings(paras)
+        errors = self.get_errors(paras)
+        fatal = self.get_fatal(paras)
         if fatal:
-            print(f"pdftex {COLORS.BRIGHT_RED}fatal error{COLORS.ENDC}:")
+            print(f"{self.cmdname} {COLORS.BRIGHT_RED}fatal error{COLORS.ENDC}:")
             for i, x in enumerate(errors):
                 x = x.replace("\n", "\n\t")
                 print(f"{i+1}. \t{x}")
             return False
-        if ind is not None:
+        if self.mode == "latex" and ind is not None:
             log_file_name = os.path.basename(opts[-1]).replace(".tex", ".log").strip()
             log_file = os.path.join(opts[ind+1].strip(), log_file_name)
             with open(log_file, "rb") as f:
@@ -80,12 +162,12 @@ class TexCompiler:
                                                           COLORS.ENDC)
                              for x in log_text if "undefined" in x.lower()])
         if errors:
-            print("pdftex errors:")
+            print(f"{self.cmdname} errors:")
             for i, x in enumerate(errors):
                 x = x.replace("\n", "\n\t")
                 print(f"{i+1}. \t{x}")
         if warnings:
-            print("pdftex warnings:")
+            print(f"{self.cmdname} warnings:")
             for i, x in enumerate(warnings):
                 x = x.replace("\n", "\n\t")
                 print(f"{i+1}. \t{x}")
@@ -93,6 +175,12 @@ class TexCompiler:
 
 
 tex_compiler = TexCompiler()
+
+
+def is_tex_command(cmd: str) -> bool:
+    splits = cmd.split("&&")
+    return any([re.match("^pdflatex|pdftex|biber", s.strip(), flags=re.IGNORECASE)
+                for s in splits])
 
 
 def exec_command(command: str, input: Optional[str] = None, noshell: bool = False):
@@ -106,18 +194,28 @@ def exec_command(command: str, input: Optional[str] = None, noshell: bool = Fals
         input: Optional input to give to command via stdin
         noshell: Whether not to use shell
 
+    Aside from arbitrary shell commands, `pdftex`, `pdflatex` and `biber` are
+    compiled via a separate :class:`TexCompiler` for printing legible color
+    coded warnings and errors.
+
     """
     prefix = "Executing command: "
     splits = command.split(" ")
-    splits = [splits[i*4:(i+1)*4] for i in range(len(splits)//4)]  # type: ignore
+    splits = [splits[i*4:(i+1)*4] for i in range(len(splits)//4 + 1)]  # type: ignore
     cmd = ("\n" + " "*len(prefix)).join([" ".join(x) for x in splits])
     shell = not noshell
     print(f"{prefix}{cmd}")
     os.chdir(os.path.abspath(os.getcwd()))
-    if command.startswith("pdflatex") or command.startswith("pdftex"):
+    if is_tex_command(command):
         try:
             # NOTE: Changed to TexCompiler
             # status = exec_tex_compile(command)
+            if "pdftex" in command or "pdflatex" in command:
+                tex_compiler.mode = "latex"
+            elif "biber" in command:
+                tex_compiler.mode = "biber"
+            else:
+                raise ValueError(f"Unknown tex command in {command}")
             status = tex_compiler.compile(command)
             return status
         except Exception as e:
