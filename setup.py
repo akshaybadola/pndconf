@@ -44,7 +44,9 @@ setup(
         "common-pyutil>=0.7.2",
         "chardet>=4.0.x",
         "pyyaml==5.4.x",
-        "pandoc-eqnos==2.5.x"],
+        "pandoc-eqnos==2.5.x",
+        "bibtexparser @ https://github.com/sciunto-org/python-bibtexparser@master",
+        "pandocfilters==1.5.x"],
     entry_points={
         'console_scripts': [
             'pndconf = pndconf.__main__:main',
