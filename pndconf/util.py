@@ -8,7 +8,6 @@ import importlib
 from pathlib import Path
 from subprocess import Popen, PIPE
 
-import bibtexparser
 from bibtexparser import bparser, bwriter
 
 from .colors import COLORS
@@ -53,7 +52,10 @@ class Debounce:
             return x
 
 
-def generate_bibtex(in_file: Path, metadata: Dict, text: str, pandoc_path: Path):
+# NOTE: An alternative library is :mod:`biblib`, but that's not been updated
+#       for a while.
+def generate_bibtex(in_file: Path, metadata: Dict, style: str,
+                    text: str, pandoc_path: Path) -> str:
     """Generate bibtex for markdown file.
 
     Args:
@@ -64,6 +66,9 @@ def generate_bibtex(in_file: Path, metadata: Dict, text: str, pandoc_path: Path)
     The bibtex file is generated in the same directory as `in_file` with a
     ".bib" suffix.
 
+    We use :mod:`re` for spliting the bibtex file.  Searching with :mod:`re` is
+    faster than parsing all the bib entries with :mod:`bibtexparser`.
+
     """
     out_file = in_file.parent.joinpath(in_file.stem + ".bib")
     bib_files = metadata["bibliography"]
@@ -72,40 +77,40 @@ def generate_bibtex(in_file: Path, metadata: Dict, text: str, pandoc_path: Path)
         with open(bf) as f:
             temp = f.read()
             splits.extend([*filter(None, re.split(r'(@.+){', temp))])
-    entries = {}
+    entries: Dict[str, str] = {}
     for i in range(0, len(splits), 2):
         key = splits[i+1].split(",")[0]
         entries[key] = splits[i] + "{" + splits[i+1]
     bibs = []
-    bib_keys = re.findall(r'\[@(.+?)\]', text)
-    for k in bib_keys:
-        if k in entries:
-            bibs.append(entries[k])
+    text_citations = re.findall(r'\[@(.+?)\]', text)
+    for t in text_citations:
+        if t in entries:
+            bibs.append(entries[t])
+    # NOTE: parser is used primarily to validate the bibtexs. We might use it to
+    #       transform them later
     parser = bparser.BibTexParser(common_strings=True)
-    # writer = bwriter.BibTexWriter(write_common_strings=True)
-    # writer._entry_to_bibtex(bib_all.entries_dict['ioffe2015batch'])
     try:
-        parser.parse("\n".join(bibs))
+        bibtex = parser.parse("\n".join(bibs))  # noqa
+        # bibs = transform_bibtex(bibtex)
     except Exception:
         msg = "Error while parsing bibtexs. Check sources."
         raise ValueError(msg)
-    p = Popen(f"{pandoc_path} -r markdown -s -t biblatex {in_file}",
+    p = Popen(f"{pandoc_path} -r markdown -s -t {style} {in_file}",
               shell=True, stdout=PIPE, stderr=PIPE)
-    out, err = p.communicate()
+    yaml_refs, err = p.communicate()
     with open(out_file, "w") as f:
         f.write("".join(bibs))
-        f.write(out.decode("utf-8"))
-    metadata["bibliography"] = [str(out_file)]
-    # for bf in bib_files:
-    #     with open(bf) as f:
-    #         entries[bf] = parser.parse_file(f)
-    # dump = {}
-    # for k in bib_keys:
-    #     for ent in entries.values():
-    #         if k in ent.entries_dict:
-    #             dump[k] = ent.entries_dict[k]
-    #             continue
+        f.write(yaml_refs.decode("utf-8"))
+    metadata["bibliography"] = [str(out_file.absolute())]
+    return str(out_file)
 
+
+def transform_bibtex(bibtex) -> List[str]:
+    # writer = bwriter.BibTexWriter(write_common_strings=True)
+    # retval = []
+    # for entry in bibtex.entries:
+    #     retval.append(writer._entry_to_bibtex(transform(entry)))
+    pass
 
 
 def compress_space(x: str):
@@ -113,6 +118,16 @@ def compress_space(x: str):
 
 
 def update_command(command: List[str], k: str, v: str) -> None:
+    """Update a list of options by removing the current matching options.
+
+    Args:
+        command: List of command options
+        k: Key to match
+        v: Value to update with
+
+    The list is updated in place.
+
+    """
     existing = [x for x in command if "--" + k in x]
     for val in existing:
         command.remove(val)
@@ -120,6 +135,24 @@ def update_command(command: List[str], k: str, v: str) -> None:
 
 
 def get_csl_or_template(key: str, val: str, dir: Path):
+    """Get CSL or template file according to the value :code:`val`
+
+    Args:
+        key: One of "csl" or "template"
+        val: The file path or file stem to search for, essentially
+             the CSL or template name.
+        dir: The directory in which to search
+
+    The CSL or template file can be searched in a given directory with the file
+    name or file name without suffix with some rules according to naming
+    conventions.
+
+    E.g., :code:`get_csl_or_template("csl", "ieee", "some_dir")` will search for
+    "ieee" and "ieee.csl" in "some_dir".
+    While, :code:`get_csl_or_template("template", "ieee", "some_dir")` will search for
+    "default.ieee" and "ieee.template" in those directories
+
+    """
     v = val
     if dir.joinpath(v).exists():
         v = str(dir.joinpath(v))

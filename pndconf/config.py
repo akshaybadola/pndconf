@@ -25,7 +25,7 @@ def csl_subr(v: str, csl_dir: Optional[Path], in_file: str):
     Args:
         v: String value representing CSL
 
-    `v` can be a full path, a relative path or simply a string sans
+    :code:`v` can be a full path, a relative path or simply a string sans
     extension. Its existence is checked in order:
     full_path > self.csl_dir > relative_path
 
@@ -328,7 +328,9 @@ class Configuration:
                     else:
                         if k in in_file_pandoc_opts:
                             if k in self.cmdline_opts:
-                                command.append(f"--{k}={v}" if v else k)
+                                if k == "bibliography":
+                                    v = str(Path(v).absolute())
+                                update_command(command, k, v)
                         else:
                             command.append(f"--{k}={v}" if v else k)
                 else:
@@ -345,34 +347,69 @@ class Configuration:
                     if not self.no_citeproc:
                         command.insert(0, "--citeproc")
             if self.no_citeproc:
-                if all([x not in command
-                        for x in ["--natbib", "--biblatex", "-V natbib", "-V biblatex"]]):
+                bib_cmds = {"--natbib": "bibtex", "--biblatex": "biblatex"}
+                if not any([x in command for x in bib_cmds]):
                     msg = "Not using citeproc and no other citation processor given. " +\
                         "Will use bibtex as default."
                     logw(msg)
+                    bib_cmd = "bibtex"
+                else:
+                    bib_cmd = [(k, v) for k, v in bib_cmds.items()][0][1]
+                if bib_cmd == "bibtex":
+                    command.append("--natbib")
+                    sed_cmd = "sed -i 's/\\\\citep{/\\\\cite{/g' " +\
+                        os.path.join(filename_no_ext) + ".tex"
+                elif bib_cmd == "biblatex":
                     command.append("--biblatex")
+                    sed_cmd = ""
+                else:
+                    raise ValueError(f"Unknown citation processor {bib_cmd}")
                 if "references" in in_file_pandoc_opts:
-                    generate_bibtex(Path(in_file), in_file_pandoc_opts,
-                                    in_file_text, self.pandoc_path)
+                    bib_style = "biblatex" if bib_cmd == "biblatex" else "bibtex"
+                    bib_file = generate_bibtex(Path(in_file), in_file_pandoc_opts, bib_style,
+                                               in_file_text, self.pandoc_path)
+            else:
+                sed_cmd = ""
+                bib_cmd = ""
             command_str = " ".join([str(self.pandoc_path), ' '.join(command)])
             command = []
             if ft == 'pdf':
                 command = [command_str]
+                if sed_cmd:
+                    command.append(sed_cmd)
                 if "-o" in self._conf[ft] and self._conf[ft]["-o"] != "pdf":
-                    command.append(f"cd {Path(out_path_no_ext).parent} && mkdir -p {out_path_no_ext}_files")
-                    command.append(f"cd {Path(out_path_no_ext).parent} && {pdflatex}")
+                    tex_files_dir = f"{out_path_no_ext}_files"
+                    command.append(f"cd {self.output_dir} && mkdir -p {tex_files_dir}")
+                    command.append(f"rm {tex_files_dir}/*")
+                    command.append(f"cd {self.output_dir} && {pdflatex}")
                     # NOTE: biber and pdflatex again if no citeproc
                     if self.no_citeproc:
-                        biber = f"biber {out_path_no_ext}_files/{filename_no_ext}.bcf"
-                        command.append(f"cd {Path(out_path_no_ext).parent} && {biber}")
-                        command.append(f"cd {Path(out_path_no_ext).parent} && {pdflatex}")
+                        if bib_cmd == "biber":
+                            biber = f"biber {tex_files_dir}/{filename_no_ext}.bcf"
+                            command.append(f"cd {self.output_dir} && {biber}")
+                            command.append(f"cd {self.output_dir} && {pdflatex}")
+                        elif bib_cmd == "bibtex":
+                            bibtex = f"bibtex {filename_no_ext}"
+                            command.append(f"cd {self.output_dir} && cp {bib_file} {tex_files_dir}/")
+                            command.append(f"cd {tex_files_dir} && {bibtex}")
+                            # bibtex = f"bibtex {tex_files_dir}/{filename_no_ext}"
+                            # command.append(f"cd {self.output_dir} && {bibtex}")
+                            pdflatex = pdflatex.replace(f'{out_path_no_ext}.tex',
+                                                        f'../{Path(out_path_no_ext).stem}.tex')
+                            # NOTE: pdflatex has to be run twice after bibtex,
+                            #       can't we just use biblatex?
+                            command.append(f"cd {tex_files_dir} && {pdflatex}")
+                            command.append(f"cd {tex_files_dir} && {pdflatex}")
+                        else:
+                            raise logw("No citation processor specified. References may not be defined correctly.")
                     out_file = str(Path(out_path_no_ext + '_files').joinpath(filename_no_ext + ".pdf"))
                 else:
                     out_file = out_path_no_ext + ".pdf"
             cmd = [*map(compress_space, command)] if command else compress_space(command_str)
             commands[ft] = {"command": cmd,
                             "in_file": in_file,
-                            "out_file": out_file, "in_file_opts": in_file_pandoc_opts,
+                            "out_file": out_file,
+                            "in_file_opts": in_file_pandoc_opts,
                             "text": in_file_text}
         return commands
 

@@ -45,7 +45,7 @@ setup(
         "chardet>=4.0.x",
         "pyyaml==5.4.x",
         "pandoc-eqnos==2.5.x",
-        "bibtexparser @ https://github.com/sciunto-org/python-bibtexparser@master",
+        "bibtexparser>=1.2.0",
         "pandocfilters==1.5.x"],
     entry_points={
         'console_scripts': [
