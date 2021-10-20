@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "pndconf"
-version = "0.3.1"
+version = "0.4.1"
 description = ""
 authors = ["Akshay <akshay.badola.cs@gmail.com>"]
 license = "MIT"
@@ -8,11 +8,11 @@ license = "MIT"
 [tool.poetry.dependencies]
 python = "^3.7"
 watchdog = "^2.1.5"
-common-pyutil = "^0.7.2"
+common-pyutil = "^0.8.0"
 chardet = "^4.0.0"
 pyyaml = "^5.4.0"
 pandoc-eqnos = "^2.5.0"
-bibtexparser = {git = "https://github.com/sciunto-org/python-bibtexparser", branch = "master"}
+bibtexparser = "^1.2.0"
 pandocfilters = "^1.5.0"
 
 [tool.poetry.scripts]

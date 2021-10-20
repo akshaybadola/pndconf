@@ -3,7 +3,8 @@
   :CUSTOM_ID: pndconf
   :END:
 
-  Pandoc configuration manager, file watcher and document generator.
+  Highly customizable [[https://pandoc.org/][pandoc]] configuration manager, file watcher and document
+  generator. Useful for easy conversion of documents with sensible defaults.
 
   Automatic conversion of markdown to various formats with pre defined
   settings via templates and folder watch with preview.
@@ -13,7 +14,9 @@
    :CUSTOM_ID: installation
    :END:
 
-   Can be installed via pip by ~pip install https://github.com/akshaybadola/pndconf~.
+   - Requires ~python>=3.7~.
+   - Can be installed via pip by ~pip install -U git+https://github.com/akshaybadola/pndconf~.
+   - PyPi package coming soon.
 
 ** Usage
    :PROPERTIES:
@@ -109,11 +112,18 @@
 
   - [X] Remove the settings folder from the repo. It should be standalone.
   - [X] Remove blog generator as that's a separate repo now.
+  - [ ] Simpler generation of basic files
+  - [ ] Hierarchical command line parser for separate commands for generation,
+    watching etc.
+  - [ ] Documentation for LaTeX requirements
+  - [ ] Documentation for templates
+  - [ ] Examples of complex pipelines
+  - [ ] Auto installation of TeX includes, user TeX setup
   - [ ] Fix include and exclude regex options.
   - [ ] Clean the code up
   - [ ] Better colorization possibly with colorama
   - [ ] A WSGI server for async communication
   - [ ] Add documentation of internals
   - [ ] Add tests
-  - [ ] Issue warning when incompatible options are used, e.g. --biblatex
+  - [ ] Issue warning when incompatible options are used, e.g. --biblatex
     and pandoc-citeproc conflict.
