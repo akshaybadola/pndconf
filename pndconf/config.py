@@ -107,6 +107,8 @@ class Configuration:
         # self._use_extra_opts = extra_opts
         # self._extra_opts = {"latex-preproc": None}
         self._debug_levels = ["error", "warning", "info", "debug"]
+        # NOTE: Some new arguments
+        self.no_cite_cmd = False
 
     @property
     def post_processor(self):
@@ -380,10 +382,13 @@ class Configuration:
                 if "-o" in self._conf[ft] and self._conf[ft]["-o"] != "pdf":
                     tex_files_dir = f"{out_path_no_ext}_files"
                     command.append(f"cd {self.output_dir} && mkdir -p {tex_files_dir}")
-                    command.append(f"rm {tex_files_dir}/*")
+                    if not self.no_cite_cmd:
+                        command.append(f"rm {tex_files_dir}/*")
                     command.append(f"cd {self.output_dir} && {pdflatex}")
                     # NOTE: biber and pdflatex again if no citeproc
-                    if self.no_citeproc:
+                    if self.no_cite_cmd:
+                        logbi(f"Not running {bib_cmd} as asked.")
+                    if self.no_citeproc and not self.no_cite_cmd:
                         if bib_cmd == "biber":
                             biber = f"biber {tex_files_dir}/{filename_no_ext}.bcf"
                             command.append(f"cd {self.output_dir} && {biber}")
