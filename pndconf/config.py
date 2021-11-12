@@ -107,6 +107,8 @@ class Configuration:
         # self._use_extra_opts = extra_opts
         # self._extra_opts = {"latex-preproc": None}
         self._debug_levels = ["error", "warning", "info", "debug"]
+        # NOTE: Some new arguments
+        self.no_cite_cmd = False
 
     @property
     def post_processor(self):
@@ -332,7 +334,7 @@ class Configuration:
                                     v = str(Path(v).absolute())
                                 update_command(command, k, v)
                         else:
-                            command.append(f"--{k}={v}" if v else k)
+                            command.append(f"--{k}={v}" if v else f"--{k}")
                 else:
                     if k == '-o':
                         out_file = out_path_no_ext + "." + v
@@ -368,6 +370,8 @@ class Configuration:
                     bib_style = "biblatex" if bib_cmd == "biblatex" else "bibtex"
                     bib_file = generate_bibtex(Path(in_file), in_file_pandoc_opts, bib_style,
                                                in_file_text, self.pandoc_path)
+                else:
+                    bib_file = ""
             else:
                 sed_cmd = ""
                 bib_cmd = ""
@@ -380,11 +384,14 @@ class Configuration:
                 if "-o" in self._conf[ft] and self._conf[ft]["-o"] != "pdf":
                     tex_files_dir = f"{out_path_no_ext}_files"
                     command.append(f"cd {self.output_dir} && mkdir -p {tex_files_dir}")
-                    command.append(f"rm {tex_files_dir}/*")
+                    if not self.no_cite_cmd:
+                        command.append(f"rm {tex_files_dir}/*")
                     command.append(f"cd {self.output_dir} && {pdflatex}")
                     # NOTE: biber and pdflatex again if no citeproc
-                    if self.no_citeproc:
-                        if bib_cmd == "biber":
+                    if self.no_cite_cmd:
+                        logbi(f"Not running {bib_cmd} as asked.")
+                    if self.no_citeproc and not self.no_cite_cmd:
+                        if bib_cmd == "biber" and bib_file:
                             biber = f"biber {tex_files_dir}/{filename_no_ext}.bcf"
                             command.append(f"cd {self.output_dir} && {biber}")
                             command.append(f"cd {self.output_dir} && {pdflatex}")
@@ -392,8 +399,6 @@ class Configuration:
                             bibtex = f"bibtex {filename_no_ext}"
                             command.append(f"cd {self.output_dir} && cp {bib_file} {tex_files_dir}/")
                             command.append(f"cd {tex_files_dir} && {bibtex}")
-                            # bibtex = f"bibtex {tex_files_dir}/{filename_no_ext}"
-                            # command.append(f"cd {self.output_dir} && {bibtex}")
                             pdflatex = pdflatex.replace(f'{out_path_no_ext}.tex',
                                                         f'../{Path(out_path_no_ext).stem}.tex')
                             # NOTE: pdflatex has to be run twice after bibtex,

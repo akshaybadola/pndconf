@@ -71,7 +71,7 @@ def generate_bibtex(in_file: Path, metadata: Dict, style: str,
 
     """
     out_file = in_file.parent.joinpath(in_file.stem + ".bib")
-    bib_files = metadata["bibliography"]
+    bib_files = metadata.get("bibliography", [])
     splits = []
     for bf in bib_files:
         with open(bf) as f:
