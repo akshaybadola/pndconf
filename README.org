@@ -23,17 +23,34 @@
    :CUSTOM_ID: usage
    :END:
 
-   - ~pndconf -i ".md" -g pdf,html,reveal~ watches all directories and
+   - ~pndconf watch -g pdf,html~ watches all directories and
      subdirectories for ~.md~ files and compiles if it notices any changes
-     to ~pdf~, ~html~ and ~reveal~ format.
-   - ~pandoc~ is used for generation and should be in the current path.
-     ~pandoc~ switches for the formats are stored in a configuration file
-     in ~ini~ format.
-   - If no config file is provided then a default config is used.
-   - See ~pndconf --help~ for a list of options.
+     to ~pdf~ and ~html~ format.
+   - ~pndconf convert -g pdf yourfile.md~ will convert ~yourfile.md~ to ~yourfile.pdf~
+   - ~pndconf convert -g pdf,html yourfile.md~ will convert ~yourfile.md~ to
+     ~yourfile.pdf~ and  ~yourfile.html~
+   - ~pndconf convert -g reveal,beamer yourfile.md~ will convert ~yourfile.md~ to
+     ~yourfile.pdf~ and  ~yourfile.html~ in presentation formats
 
-   By default it runs and watches for file system changes. You can also run
-   once with ~-ro~ switch.
+*** Options
+    - ~pandoc~ is used for generation and should be in the current path.
+      ~pandoc~ switches for the formats are stored in a configuration file
+      in ~ini~ format.
+    - If no config file is provided then a default config is used.
+    - See ~pndconf watch --help~ and ~pndconf convert --help~ for the
+      list of options.
+    - You can pass additional pandoc options at the end of the command line e.g.
+      ~pndconf convert -g pdf yourfile.md --template=yourtemplate~.
+    - An optional pandoc path can be specified with ~--pandoc-path~ switch.
+    - Current pandoc options can be dumped with ~pndconf -po~
+    - Current config can be dumped with ~pndconf --dump-default-config~
+
+*** Templates
+    Pandoc templates usually come installed with pandoc but you can check search
+    templates online and specify accordingly.
+
+    One revealjs template is given in examples.
+    Run ~pndconf -g reveal beamer.md --template=revealjs.template~ to see the result.
 
 ** Pandoc installation
    :PROPERTIES:

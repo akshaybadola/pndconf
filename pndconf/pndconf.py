@@ -146,8 +146,9 @@ def add_common_args(parser):
     parser.add_argument(
         "-g", "--generation", dest="generation",
         default="pdf",
-        help=(f"Which formats to output. Can be one of [{', '.join(gentypes)}].\n" +
-              "Defaults to pdf. You can choose multiple generation at once."))
+        help=f"Which formats to output. Can be one of [{', '.join(gentypes)}].\n" +
+        "Defaults to pdf. You can choose multiple generation at once.\n" +
+        "E.g., 'pndconf -g pdf,html' or 'pndconf -g beamer,reveal'")
     parser.add_argument(
         "-p", "--post-processor", default="",
         help="python module (or filename, must be in path) from which to load\n" +
@@ -219,7 +220,7 @@ def watch(arglist, gopts=None):
         allow_abbrev=False,
         formatter_class=argparse.RawTextHelpFormatter)
     add_common_args(parser)
-    parser.add_argument("--input-files", default="",
+    parser.add_argument("-i", "--input-files", default="",
                         help="Comma separated list of input files.\n" +
                         "If given, only these files are watched.")
     parser.add_argument("-w", "--watch-dir", default=".", dest="watch_dir",
