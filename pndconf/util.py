@@ -54,6 +54,11 @@ class Debounce:
 
 # NOTE: An alternative library is :mod:`biblib`, but that's not been updated
 #       for a while.
+# TODO: references are parsed from the md file and converted to bibtex etc. format,
+#       but bibs from the bibliography files are also combined and if a ref exists
+#       in one of the files and also in references, the it's not known which of those
+#       should be kept.
+#       Also at present duplicates are simply written to the bibtex/biblatex file
 def generate_bibtex(in_file: Path, metadata: Dict, style: str,
                     text: str, pandoc_path: Path) -> str:
     """Generate bibtex for markdown file.
@@ -70,6 +75,7 @@ def generate_bibtex(in_file: Path, metadata: Dict, style: str,
     faster than parsing all the bib entries with :mod:`bibtexparser`.
 
     """
+    # import ipdb; ipdb.set_trace()
     out_file = in_file.parent.joinpath(in_file.stem + ".bib")
     bib_files = metadata.get("bibliography", [])
     splits = []

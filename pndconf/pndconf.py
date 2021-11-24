@@ -20,7 +20,7 @@ from .util import which, logd, loge, logi, logbi, logw
 from . import __version__
 
 usage = """
-    pndconf CMD [opts] [pandoc_opts]
+    pndconf [global_opts] CMD [opts] [pandoc_opts]
 
     Pandoc options must be entered in '--opt=value' format.
 
@@ -278,7 +278,9 @@ def watch(arglist, gopts=None):
 
 
 def gopts_parser(arglist):
-    parser = argparse.ArgumentParser("File watcher")
+    parser = argparse.ArgumentParser("File watcher", add_help=False)
+    parser.add_argument("-h", "--help", action="store_true",
+                        help="Display help and exit")
     parser.add_argument("-v", "--verbose", action="store_true",
                         help="Verbose output")
     parser.add_argument("-vv", "--loud", action="store_true",
@@ -287,6 +289,10 @@ def gopts_parser(arglist):
                         help="Dry run. Don't actually do anything.")
     parser.add_argument("--dump-default-config", action="store_true",
                         help="Dump given config or default config.")
+    # parser.add_argument(
+    #     "--pandoc-path", dest="pandoc_path",
+    #     required=False,
+    #     help="Provide custom pandoc path. Must be full path to executable")
     # parser.add_argument("-po", "--print-pandoc-opts", dest="print_pandoc_opts",
     #                     action="store_true",
     #                     help="Print pandoc options and exit")
@@ -295,6 +301,9 @@ def gopts_parser(arglist):
         with open(Path(__file__).parent.joinpath("config_default.ini")) as f:
             print(f.read())
         sys.exit(0)
+    parser.usage = ""
+    args.help = parser.format_help().replace("usage: \n\n", "").replace("optional arguments:\n", "")
+    # import ipdb; ipdb.set_trace()
     # if args.print_pandoc_opts:
     #     out, err = Popen([str(pandoc_path), "--help"], stdout=PIPE, stderr=PIPE).communicate()
     #     out = out.decode("utf-8")
