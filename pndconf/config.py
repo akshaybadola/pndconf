@@ -84,7 +84,8 @@ class Configuration:
                  csl_dir: Optional[Path] = None,
                  templates_dir: Optional[Path] = None,
                  post_processor: Optional[Callable] = None,
-                 dry_run=False):
+                 same_output_dir: bool = False,
+                 dry_run=False,):
         self.watch_dir = watch_dir
         self.output_dir = output_dir
         self.pandoc_path = pandoc_path
@@ -103,6 +104,7 @@ class Configuration:
         self._excluded_folders: List[str] = []
         self._included_extensions: List[str] = []
         self._excluded_files: List[str] = []
+        self.same_output_dir = same_output_dir
         self.dry_run = dry_run
         # self._use_extra_opts = extra_opts
         # self._extra_opts = {"latex-preproc": None}
@@ -148,6 +150,8 @@ class Configuration:
 
     @property
     def output_dir(self) -> Path:
+        """`output_dir` is actually more like the root directory for the `pndconf`
+        to run."""
         return self._output_dir
 
     @output_dir.setter
@@ -262,6 +266,13 @@ class Configuration:
         That is, options in command line will overwrite those in yaml header and
         they'll overwrite those in configuration file.
 
+        In addition, pdflatex can be used to compile the latex output with
+        bibtex and biblatex etc. citation preprocessors. The seqence of steps
+        then becomes input_file > tex output > pdflatex commands > pdf output
+
+        "pdflatex commands" can include multiple invocations of pdflatex along
+        with bibtex or biber.
+
         """
         # TODO: The following should be replaced with separate tests
         # assert in_file.endswith('.md')
@@ -279,13 +290,20 @@ class Configuration:
             loge(f"Yaml parse error {e}. Will not compile.")
             return None
         commands = {}
+        if Path(in_file).absolute():
+            file_dir = Path(in_file).parent
+        if self.same_output_dir:
+            output_dir = file_dir
+            logw("Will output to same dir as input file.")
+        else:
+            output_dir = self.output_dir
         filename_no_ext = os.path.splitext(os.path.basename(in_file))[0]
-        out_path_no_ext = str(self.output_dir.joinpath(filename_no_ext))
-        pdflatex = 'pdflatex  -file-line-error -output-directory '\
-                   + out_path_no_ext + '_files'\
-                   + ' -interaction=nonstopmode '\
-                   + '--synctex=1 ' + out_path_no_ext + '.tex'
-
+        out_path_no_ext = str(output_dir.joinpath(filename_no_ext))
+        pdflatex = 'pdflatex  -file-line-error ' +\
+            (" " if self.same_output_dir else
+             '-output-directory ' + out_path_no_ext + '_files') +\
+            ' -interaction=nonstopmode --synctex=1 ' +\
+            out_path_no_ext + '.tex'
         # TODO: The commands should be validated
         #
         #       E.g: Say "-V colors=true" is given from
@@ -360,7 +378,7 @@ class Configuration:
                 if bib_cmd == "bibtex":
                     command.append("--natbib")
                     sed_cmd = "sed -i 's/\\\\citep{/\\\\cite{/g' " +\
-                        os.path.join(filename_no_ext) + ".tex"
+                        os.path.join(output_dir, filename_no_ext) + ".tex"
                 elif bib_cmd == "biblatex":
                     command.append("--biblatex")
                     sed_cmd = ""
@@ -377,30 +395,34 @@ class Configuration:
                 bib_cmd = ""
             command_str = " ".join([str(self.pandoc_path), ' '.join(command)])
             command = []
+            # import ipdb; ipdb.set_trace()
             if ft == 'pdf':
                 command = [command_str]
                 if sed_cmd:
                     command.append(sed_cmd)
                 if "-o" in self._conf[ft] and self._conf[ft]["-o"] != "pdf":
-                    tex_files_dir = f"{out_path_no_ext}_files"
-                    command.append(f"cd {self.output_dir} && mkdir -p {tex_files_dir}")
-                    if not self.no_cite_cmd:
+                    tex_files_dir = output_dir if self.same_output_dir else\
+                        f"{out_path_no_ext}_files"
+                    command.append(f"cd {output_dir} && mkdir -p {tex_files_dir}")
+                    if not self.no_cite_cmd and (not tex_files_dir == output_dir):
+                        # Don't clean output directory for tex if same_output_dir
                         command.append(f"rm {tex_files_dir}/*")
-                    command.append(f"cd {self.output_dir} && {pdflatex}")
+                    command.append(f"cd {output_dir} && {pdflatex}")
                     # NOTE: biber and pdflatex again if no citeproc
                     if self.no_cite_cmd:
                         logbi(f"Not running {bib_cmd} as asked.")
                     if self.no_citeproc and not self.no_cite_cmd:
                         if bib_cmd == "biber" and bib_file:
                             biber = f"biber {tex_files_dir}/{filename_no_ext}.bcf"
-                            command.append(f"cd {self.output_dir} && {biber}")
-                            command.append(f"cd {self.output_dir} && {pdflatex}")
+                            command.append(f"cd {output_dir} && {biber}")
+                            command.append(f"cd {output_dir} && {pdflatex}")
                         elif bib_cmd == "bibtex":
                             bibtex = f"bibtex {filename_no_ext}"
-                            command.append(f"cd {self.output_dir} && cp {bib_file} {tex_files_dir}/")
+                            command.append(f"cd {output_dir} && cp {bib_file} {tex_files_dir}/")
                             command.append(f"cd {tex_files_dir} && {bibtex}")
-                            pdflatex = pdflatex.replace(f'{out_path_no_ext}.tex',
-                                                        f'../{Path(out_path_no_ext).stem}.tex')
+                            if not self.same_output_dir:
+                                pdflatex = pdflatex.replace(f'{out_path_no_ext}.tex',
+                                                            f'../{Path(out_path_no_ext).stem}.tex')
                             # NOTE: pdflatex has to be run twice after bibtex,
                             #       can't we just use biblatex?
                             command.append(f"cd {tex_files_dir} && {pdflatex}")

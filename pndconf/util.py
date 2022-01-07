@@ -9,8 +9,10 @@ from pathlib import Path
 from subprocess import Popen, PIPE
 
 from bibtexparser import bparser, bwriter
+from common_pyutil.functional import compose
 
 from .colors import COLORS
+from . import transforms
 
 
 class Debounce:
@@ -74,6 +76,8 @@ def generate_bibtex(in_file: Path, metadata: Dict, style: str,
     We use :mod:`re` for spliting the bibtex file.  Searching with :mod:`re` is
     faster than parsing all the bib entries with :mod:`bibtexparser`.
 
+    Conflicts:
+
     """
     # import ipdb; ipdb.set_trace()
     out_file = in_file.parent.joinpath(in_file.stem + ".bib")
@@ -97,26 +101,39 @@ def generate_bibtex(in_file: Path, metadata: Dict, style: str,
     parser = bparser.BibTexParser(common_strings=True)
     try:
         bibtex = parser.parse("\n".join(bibs))  # noqa
-        # bibs = transform_bibtex(bibtex)
+        p = Popen(f"{pandoc_path} -r markdown -s -t {style} {in_file}",
+                  shell=True, stdout=PIPE, stderr=PIPE)
+        yaml_refs, err = p.communicate()
+        parser.parse(yaml_refs)
+        bibs = transform_bibtex(bibtex.entries)
     except Exception:
         msg = "Error while parsing bibtexs. Check sources."
         raise ValueError(msg)
-    p = Popen(f"{pandoc_path} -r markdown -s -t {style} {in_file}",
-              shell=True, stdout=PIPE, stderr=PIPE)
-    yaml_refs, err = p.communicate()
     with open(out_file, "w") as f:
         f.write("".join(bibs))
-        f.write(yaml_refs.decode("utf-8"))
     metadata["bibliography"] = [str(out_file.absolute())]
     return str(out_file)
 
 
-def transform_bibtex(bibtex) -> List[str]:
-    # writer = bwriter.BibTexWriter(write_common_strings=True)
-    # retval = []
-    # for entry in bibtex.entries:
-    #     retval.append(writer._entry_to_bibtex(transform(entry)))
-    pass
+def transform_bibtex(entries: List[Dict[str, str]]) -> List[str]:
+    # Can either use abbreviate after full names or contractions
+    t = compose(transforms.abbreviate_venue,
+                transforms.change_to_title_case,
+                transforms.standardize_venue,
+                transforms.normalize)
+    # t = compose(transforms.change_to_title_case,
+    #             transforms.contract_venue,
+    #             transforms.normalize)
+    writer = bwriter.BibTexWriter(write_common_strings=True)
+    retval: Dict[str, str] = {}
+    for ent in entries:
+        # TODO: Filter duplicates somewhere here maybe
+        ID = ent["ID"]
+        # if ID in retval:
+        #     existing = retval[ID]
+        #     check_which_one_to_keep
+        retval[ID] = writer._entry_to_bibtex(t(ent.copy()))
+    return [*retval.values()]
 
 
 def compress_space(x: str):
