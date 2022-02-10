@@ -1,6 +1,105 @@
-from typing import Dict, List, Optional
+from typing import Dict, List
 import re
 
+
+def rule_neurips(x):
+    if "nips" in x.lower() or "neurips" in x.lower() or\
+       "neural information processing" in x.lower():
+        return "neurips"
+
+
+def rule_iccv(x):
+    if ("computer vision" in x.lower() and "international conference" in x.lower() and
+            "pattern" not in x.lower()) or "iccv" in x.lower():
+        return "iccv"
+
+
+def rule_cvpr(x):
+    if "computer vision and pattern recognition" in x.lower() or "cvpr" in x.lower():
+        return "cvpr"
+
+
+def rule_wavc(x):
+    if "winter conference" in x.lower() and "computer vision" in x.lower() or\
+       "wavc" in x.lower():
+        return "wavc"
+
+
+def rule_eccv(x):
+    if "european conference" in x.lower() and "computer vision" in x.lower() or\
+       "eccv" in x.lower():
+        return "eccv"
+
+
+def rule_iclr(x):
+    if "learning representations" in x.lower() or "iclr" in x.lower():
+        return "iclr"
+
+
+def rule_bmvc(x):
+    if "british" in x.lower() and "machine vision" in x.lower() or "bmvc" in x.lower():
+        return "bmvc"
+
+
+def rule_aistats(x):
+    if "artificial intelligence and statistics" in x.lower() or\
+       "aistats" in x.lower():
+        return "aistats"
+
+
+def rule_uai(x):
+    if "uncertainty in artificial intelligence" in x.lower() or\
+       "UAI" in x:
+        return "uai"
+
+
+def rule_ijcv(x):
+    if "international journal of computer vision" in x.lower() or\
+       "ijcv" in x.lower():
+        return "ijcv"
+
+
+def rule_ijcai(x):
+    if "ijcai" in x.lower() or\
+       "joint conference on artificial intelligence" in x.lower():
+        return "ijcai"
+
+
+def rule_aaai(x):
+    if "aaai" in x.lower():
+        return "aaai"
+
+
+def rule_icml(x):
+    if "icml" in x.lower() or\
+       {*filter(lambda y: y not in stop_words_set, x.lower().split())} ==\
+       {"international", "conference", "machine", "learning"}:
+        return "icml"
+
+
+def rule_pami(x):
+    if ("ieee" in x.lower() and "transactions" in x.lower() and
+            "pattern analysis" in x.lower() and "machine intelligence" in x.lower())\
+            or "PAMI" in x or "TPAMI" in x:
+        return "pami"
+
+
+def rule_jair(x):
+    if "jair" in x.lower() or\
+       re.match(r"journal +of +artificial +intelligence +research", x, flags=re.IGNORECASE):
+        return True
+
+
+def rule_jmlr(x):
+    if "jmlr" in x.lower() or\
+       re.match(r"journal +of +machine +learning +research", x, flags=re.IGNORECASE):
+        return True
+
+
+# TODO: WHAT ABOUT ABBREVIATIONS?
+#       Currently there's no rule to classify "Int. Jour. Comp. Vis." etc.
+
+# TODO: We can add certain other rules like Transactions is always a journal etc.
 
 # TODO: The variables here should be synced from the network Eventually, the
 #       pndconf should run as a service and accept markdown files so that the
@@ -8,48 +107,70 @@ import re
 
 # TODO: In some venues, "eleventh" and "twelfth" etc. are also written denoting
 #       the iteration of the conference. Perhaps use DOI to fetch that or some other method.
-venue_names = {"neurips": "Advances in Neural Information Processing Systems",
-               "iccv": "Proceedings of the IEEE International Conference on Computer Vision",
-               "cvpr": "Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition",
-               "wavc": "Proceedings of the IEEE Winter Conference on Applications of Computer Vision",
-               "eccv": "Proceedings of the European Conference on Computer Vision",
-               "iclr": "Proceedings of the International Conference on Learning Representations",
-               "bmvc": "Proceedings of the British Machine Vision Conference",
-               "aistats": "Proceedings of the International Conference on Artificial Intelligence and Statistics",
-               "uai": "Proceedings of the Conference on Uncertainty in Artificial Intelligence",
-               "ijcv": "International Journal of Computer Vision",
-               "ijcai": "Proceedings of the International Joint Conference on Artificial Intelligence",
-               "aaai": "Proceedings of the AAAI Conference on Artificial Intelligence",
-               "icml": "Proceedings of the International Conference on Machine Learning",
-               "pami": "IEEE Transactions on Pattern Analysis and Machine Intelligence"}
-entry_types = {"neurips": "inproceedings",
-               "iccv": "inproceedings",
-               "cvpr": "inproceedings",
-               "wavc": "inproceedings",
-               "eccv": "inproceedings",
-               "iclr": "inproceedings",
-               "bmvc": "inproceedings",
-               "aistats": "inproceedings",
-               "uai": "inproceedings",
-               "ijcv": "article",
-               "ijcai": "inproceedings",
-               "aaai": "inproceedings",
-               "icml": "inproceedings",
-               "pami": "article"}
-venue_contractions = {"neurips": "NeurIPS",
-                      "iccv": "ICCV",
-                      "cvpr": "CVPR",
-                      "wavc": "WAVC",
-                      "eccv": "ECCV",
-                      "iclr": "ICLR",
-                      "bmvc": "BMVC",
-                      "aistats": "AISTATS",
-                      "uai": "UAI",
-                      "ijcv": "IJCV",
-                      "ijcai": "IJCAI",
-                      "aaai": "AAAI",
-                      "icml": "ICML",
-                      "pami": "TPAMI"}
+venues = {'neurips': {'name': 'Advances in Neural Information Processing Systems',
+                      'type': 'inproceedings',
+                      'contraction': 'NeurIPS',
+                      'rule': rule_neurips},
+          'iccv': {'name': 'Proceedings of the IEEE International Conference on Computer Vision',
+                   'type': 'inproceedings',
+                   'contraction': 'ICCV',
+                   'rule': rule_iccv},
+          'cvpr': {'name': 'Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition',
+                   'type': 'inproceedings',
+                   'contraction': 'CVPR',
+                   'rule': rule_cvpr},
+          'wavc': {'name': 'Proceedings of the IEEE Winter Conference on Applications of Computer Vision',
+                   'type': 'inproceedings',
+                   'contraction': 'WAVC',
+                   'rule': rule_wavc},
+          'eccv': {'name': 'Proceedings of the European Conference on Computer Vision',
+                   'type': 'inproceedings',
+                   'contraction': 'ECCV',
+                   'rule': rule_eccv},
+          'iclr': {'name': 'Proceedings of the International Conference on Learning Representations',
+                   'type': 'inproceedings',
+                   'contraction': 'ICLR',
+                   'rule': rule_iclr},
+          'bmvc': {'name': 'Proceedings of the British Machine Vision Conference',
+                   'type': 'inproceedings',
+                   'contraction': 'BMVC',
+                   'rule': rule_bmvc},
+          'aistats': {'name': 'Proceedings of the International Conference on Artificial Intelligence and Statistics',
+                      'type': 'inproceedings',
+                      'contraction': 'AISTATS',
+                      'rule': rule_aistats},
+          'uai': {'name': 'Proceedings of the Conference on Uncertainty in Artificial Intelligence',
+                  'type': 'inproceedings',
+                  'contraction': 'UAI',
+                  'rule': rule_uai},
+          'ijcv': {'name': 'International Journal of Computer Vision',
+                   'type': 'article',
+                   'contraction': 'IJCV',
+                   'rule': rule_ijcv},
+          'ijcai': {'name': 'Proceedings of the International Joint Conference on Artificial Intelligence',
+                    'type': 'inproceedings',
+                    'contraction': 'IJCAI',
+                    'rule': rule_ijcai},
+          'aaai': {'name': 'Proceedings of the AAAI Conference on Artificial Intelligence',
+                   'type': 'inproceedings',
+                   'contraction': 'AAAI',
+                   'rule': rule_aaai},
+          'icml': {'name': 'Proceedings of the International Conference on Machine Learning',
+                   'type': 'inproceedings',
+                   'contraction': 'ICML',
+                   'rule': rule_icml},
+          'pami': {'name': 'IEEE Transactions on Pattern Analysis and Machine Intelligence',
+                   'type': 'article',
+                   'contraction': 'TPAMI',
+                   'rule': rule_pami},
+          'jair': {'name': 'Journal of Artificial Intelligence Research',
+                   'type': 'article',
+                   'contraction': 'JAIR',
+                   'rule': rule_jair},
+          'jmlr': {'name': 'Journal of Machine Learning Research',
+                   'type': 'article',
+                   'contraction': 'JMLR',
+                   'rule': rule_jmlr}}
 stop_words_set = {"a", "an", "and", "are", "as", "at", "by", "can", "did",
                   "do", "does", "for", "from", "had", "has", "have", "having", "here", "how",
                   "in", "into", "is", "it", "it's", "its", "not", "of", "on", "over", "should",
@@ -145,88 +266,6 @@ def update_abbrevs(words, abbrevs, abbrev_regexps):
                 abbrevs[w.capitalize()] = abbrev.capitalize()
 
 
-def rule_neurips(x):
-    if "nips" in x.lower() or "neurips" in x.lower() or\
-       "neural information processing" in x.lower():
-        return venue_names["neurips"]
-
-
-def rule_iccv(x):
-    if ("computer vision" in x.lower() and "international conference" in x.lower() and
-            "pattern" not in x.lower()) or "iccv" in x.lower():
-        return venue_names["iccv"]
-
-
-def rule_cvpr(x):
-    if "computer vision and pattern recognition" in x.lower() or "cvpr" in x.lower():
-        return venue_names["cvpr"]
-
-
-def rule_wavc(x):
-    if "winter conference" in x.lower() and "computer vision" in x.lower() or\
-       "wavc" in x.lower():
-        return venue_names["wavc"]
-
-
-def rule_eccv(x):
-    if "european conference" in x.lower() and "computer vision" in x.lower() or\
-       "eccv" in x.lower():
-        return venue_names["eccv"]
-
-
-def rule_iclr(x):
-    if "learning representations" in x.lower() or "iclr" in x.lower():
-        return venue_names["iclr"]
-
-
-def rule_bmvc(x):
-    if "british" in x.lower() and "machine vision" in x.lower() or "bmvc" in x.lower():
-        return venue_names["bmvc"]
-
-
-def rule_aistats(x):
-    if "artificial intelligence and statistics" in x.lower() or\
-       "aistats" in x.lower():
-        return venue_names["aistats"]
-
-
-def rule_uai(x):
-    if "uncertainty in artificial intelligence" in x.lower() or\
-       "UAI" in x:
-        return venue_names["uai"]
-
-
-def rule_ijcv(x):
-    if "international journal of computer vision" in x.lower() or\
-       "ijcv" in x.lower():
-        return venue_names["ijcv"]
-
-
-def rule_ijcai(x):
-    if "ijcai" in x.lower() or\
-       "joint conference on artificial intelligence" in x.lower():
-        return venue_names["ijcai"]
-
-
-def rule_aaai(x):
-    if "aaai" in x.lower():
-        return venue_names["aaai"]
-
-
-def rule_icml(x):
-    if "icml" in x.lower() or\
-       {*filter(lambda y: y not in stop_words_set, x.lower().split())} ==\
-       {"international", "conference", "machine", "learning"}:
-        return venue_names["icml"]
-
-
-def rule_pami(x):
-    if ("ieee" in x.lower() and "transactions" in x.lower() and
-            "pattern analysis" in x.lower() and "machine intelligence" in x.lower())\
-            or "PAMI" in x or "TPAMI" in x:
-        return venue_names["pami"]
-
-
 def normalize(ent: Dict[str, str]):
     """Replaces newlines in entries with a space. (for now)"""
     for k, v in ent.items():
@@ -237,26 +276,6 @@ def normalize(ent: Dict[str, str]):
 def fix_cvf(x):
     if "ieee/cvf" in x.lower():
         return x.replace("ieee/cvf", "IEEE").replace("IEEE/CVF", "IEEE")
-
-
-# TODO: Can add certain other rules like Transactions is always a journal etc.
-rules = {"neurips": rule_neurips,
-         "iccv": rule_iccv,
-         "cvpr": rule_cvpr,
-         "wavc": rule_wavc,
-         "eccv": rule_eccv,
-         "iclr": rule_iclr,
-         "bmvc": rule_bmvc,
-         "aistats": rule_aistats,
-         "uai": rule_uai,
-         "ijcv": rule_ijcv,
-         "ijcai": rule_ijcai,
-         "aaai": rule_aaai,
-         "icml": rule_icml,
-         "pami": rule_pami}
-# NOTE: This assertion should hold after each edition of the venues
-assert set(rules.keys()) == set(venue_names.keys()) ==\
-    set(entry_types.keys()) == set(venue_contractions.keys())
 
 
 def fix_venue(ent, contract=False):
@@ -280,15 +299,17 @@ def fix_venue(ent, contract=False):
     venue = ent.get("booktitle", None) or ent.get("journal", None)
     if venue:
         venue = venue.replace("{", "").replace("}", "")
-        for k, v in rules.items():
-            if v(venue):
-                vname = venue_contractions[k] if contract else venue_names[k]
-                if entry_types[k] == "inproceedings":
+        for k, v in venues.items():
+            rule = v["rule"]
+            vtype = v["type"]
+            if rule(venue):
+                vname = v["contraction"] if contract else v["name"]
+                if vtype == "inproceedings":
                     if ent["ENTRYTYPE"] == "article":
                         ent["ENTRYTYPE"] = "inproceedings"
                         ent.pop("journal")
                     ent["booktitle"] = vname
-                elif entry_types[k] == "article":
+                elif vtype == "article":
                     if ent["ENTRYTYPE"] == "inproceedings":
                         ent["ENTRYTYPE"] = "article"
                         ent.pop("booktitle")
