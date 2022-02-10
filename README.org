@@ -50,7 +50,19 @@
     templates online and specify accordingly.
 
     One revealjs template is given in examples.
-    Run ~pndconf -g reveal beamer.md --template=revealjs.template~ to see the result.
+    Run ~pndconf convert -g reveal beamer.md --template=reveal.template~ to see the result.
+
+*** Beamer
+    By running ~pndconf convert -g beamer beamer.md~ you select pandoc's
+    internal template. Instead if you run
+    ~pndconf convert -g beamer beamer.md --template=beamer.template~
+    then the template present in the examples directory is chose. Keep in mind
+    that some options will work only with that template.
+
+    The ~beamer.template~ file in the examples directory will work only with ~pandoc>==2.14~
+    For older versions use ~beamer_old.template~.
+
+    See ~examples/beamer.md~ for additional options.
 
 ** Pandoc installation
    :PROPERTIES:
@@ -65,8 +77,9 @@
 
    - You can also install via ~cabal-install~ for the latest version
 
-     - ~pandoc-2.14.2~ has citeproc inbuilt and has some extra features
-       which are quite useful
+     - ~pandoc-2.14~ has citeproc inbuilt and has some extra features
+       which are quite useful. For versions of ~pndconf>==0.4.2~ only
+       ~pandoc>=2.14~ is supported.
      - While installing via ~cabal-install~ it's preferable to update your
        haskell compiler first to the latest version.
      - For GHC use at least ~8.8.2~
@@ -129,8 +142,8 @@
 
   - [X] Remove the settings folder from the repo. It should be standalone.
   - [X] Remove blog generator as that's a separate repo now.
-  - [ ] Simpler generation of basic files
-  - [ ] Hierarchical command line parser for separate commands for generation,
+  - [X] Simpler generation of basic files
+  - [X] Hierarchical command line parser for separate commands for generation,
     watching etc.
   - [ ] Documentation for LaTeX requirements
   - [ ] Documentation for templates
@@ -139,7 +152,7 @@
   - [ ] Fix include and exclude regex options.
   - [ ] Clean the code up
   - [ ] Better colorization possibly with colorama
-  - [ ] A WSGI server for async communication
+  - [ ] A A/WSGI server for async communication
   - [ ] Add documentation of internals
   - [ ] Add tests
   - [ ] Issue warning when incompatible options are used, e.g. --biblatex

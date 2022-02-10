@@ -1,6 +1,9 @@
 ---
 title:  Beamer Slides
-author: Awesome Author
+author:
+    - Awesome Author
+    - Another Awesome Author
+institute: '\protect{\large Some Random Place}'
 date: \today
 bibliography: ./bibliography.bib
 link-citations: true
@@ -8,8 +11,18 @@ template: beamer
 csl: ieee
 ---
 
-<!--includes settings/templates/beamer.template-->
+<!-- For newline between authors or any other lines between multiple authors set
+authorsep in yaml header like so:
 
+authorsep: '\protect{\\}'
+
+To change the font, set like this. In fact any latex commands can be inserted
+using a literal string '' and \protect. The Default template will set a small
+institution font. The following changes it to large.
+
+institute: '\protect{\large Some Random Place}'
+
+Above inserts a single newline between authors. -->
 
 # Section 1
 
