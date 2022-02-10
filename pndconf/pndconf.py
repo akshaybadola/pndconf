@@ -32,7 +32,7 @@ usage = """
         # to some other output directory
         pndconf watch -g pdf,beamer -d /path/to/watch_dir -o output_dir
 """
-gentypes = ["html", "pdf", "reveal", "beamer"]
+gentypes = ["html", "pdf", "reveal", "beamer", "latex"]
 
 
 def pandoc_version_and_path(pandoc_path: Optional[Path]):
@@ -68,6 +68,7 @@ def get_config(args: SimpleNamespace, extra: SimpleNamespace) -> Configuration:
                            csl_dir=args.csl_dir,
                            templates_dir=args.templates_dir,
                            post_processor=args.post_processor,
+                           same_output_dir=args.same_output_dir,
                            dry_run=args.dry_run)
     # FIXME: No other args should be given with this
     if args.print_generation_opts:
@@ -175,6 +176,9 @@ def add_common_args(parser):
     parser.add_argument("-l", "--log-level", dest="log_level",
                         default="warning",
                         help="Debug Level. One of: error, warning, info, debug")
+    parser.add_argument("--same-output-dir", action="store_true", dest="same_output_dir",
+                        help="Output tex files and pdf to same dir as markdown file.\n" +
+                        "Default is to create a separate folder with a \"_files\" suffix")
 
 
 def convert(arglist, gopts=None):

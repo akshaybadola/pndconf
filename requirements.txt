@@ -1,0 +1,7 @@
+watchdog>=2.1.5
+common-pyutil>=0.7.2
+chardet>=4.0.*
+pyyaml==5.4.*
+pandoc-eqnos==2.5.*
+bibtexparser>=1.2.0
+pandocfilters==1.5.*
