@@ -6,7 +6,7 @@ description = """Pandoc configuration manager, file watcher and document generat
 
 Primarily meant for watching and converting markdown files to whatever pandoc can support."""
 
-with open("README.md") as f:
+with open("README.org") as f:
     long_description = f.read()
 
 setup(
@@ -41,12 +41,12 @@ setup(
     python_requires=">=3.7, <=4.0",
     install_requires=[
         "watchdog>=2.1.5",
-        "common-pyutil>=0.7.2",
-        "chardet>=4.0.x",
-        "pyyaml==5.4.x",
-        "pandoc-eqnos==2.5.x",
+        "common-pyutil>=0.8.0",
+        "chardet>=4.0.*",
+        "pyyaml==5.4.*",
+        "pandoc-eqnos==2.5.*",
         "bibtexparser>=1.2.0",
-        "pandocfilters==1.5.x"],
+        "pandocfilters==1.5.*"],
     entry_points={
         'console_scripts': [
             'pndconf = pndconf.__main__:main',

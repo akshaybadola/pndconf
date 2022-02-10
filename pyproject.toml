@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "pndconf"
-version = "0.4.3"
+version = "0.4.4"
 description = ""
 authors = ["Akshay <akshay.badola.cs@gmail.com>"]
 license = "MIT"
