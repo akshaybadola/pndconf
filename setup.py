@@ -37,6 +37,7 @@ setup(
     ],
     packages=["pndconf"],
     include_package_data=True,
+    package_data={'': ['config_default.ini']},
     keywords='pandoc markdown watcher',
     python_requires=">=3.7, <=4.0",
     install_requires=[

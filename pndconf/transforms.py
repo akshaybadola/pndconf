@@ -266,6 +266,11 @@ def update_abbrevs(words, abbrevs, abbrev_regexps):
                 abbrevs[w.capitalize()] = abbrev.capitalize()
 
 
+def fix_cvf(x: str):
+    if "ieee/cvf" in x.lower():
+        return x.replace("ieee/cvf", "IEEE").replace("IEEE/CVF", "IEEE")
+
+
 def normalize(ent: Dict[str, str]):
     """Replaces newlines in entries with a space. (for now)"""
     for k, v in ent.items():
@@ -273,13 +278,12 @@ def normalize(ent: Dict[str, str]):
     return ent
 
 
-def fix_cvf(x):
-    if "ieee/cvf" in x.lower():
-        return x.replace("ieee/cvf", "IEEE").replace("IEEE/CVF", "IEEE")
-
-
-def fix_venue(ent, contract=False):
+def fix_venue(ent: Dict[str, str], contract: bool = False):
     """Fix venue if it's a known venue.
+
+    Args:
+        ent: Bibtex Entry as a dictionary. It's modified in place.
+        contract: Flag to signal contraction of venue.
 
     Fix name of conference or journal to standard nomenclature for that venue
     and also change the venue type to correct one of \"inproceedings\" or
@@ -296,7 +300,7 @@ def fix_venue(ent, contract=False):
     instead.
 
     """
-    venue = ent.get("booktitle", None) or ent.get("journal", None)
+    venue = ent.get("booktitle", None) or ent.get("journal", None) or ent.get("venue", None)
     if venue:
         venue = venue.replace("{", "").replace("}", "")
         for k, v in venues.items():
@@ -320,7 +324,7 @@ def fix_venue(ent, contract=False):
     return ent
 
 
-def standardize_venue(ent):
+def standardize_venue(ent: Dict[str, str]):
     """Change the venue name to a standard name.
 
     See :func:`fix_venue`.
@@ -329,7 +333,7 @@ def standardize_venue(ent):
     return fix_venue(ent)
 
 
-def contract_venue(ent):
+def contract_venue(ent: Dict[str, str]):
     """Change the venue name to a contraction.
 
     See :func:`fix_venue`.
@@ -370,7 +374,7 @@ def change_to_title_case(ent: Dict[str, str]) -> Dict[str, str]:
     return ent
 
 
-def abbreviate_venue(ent):
+def abbreviate_venue(ent: Dict[str, str]):
     if ent["ENTRYTYPE"] == "inproceedings":
         vkey = "booktitle"
     elif ent["ENTRYTYPE"] == "article":
@@ -380,7 +384,7 @@ def abbreviate_venue(ent):
     try:
         words = ent[vkey].split()
     except Exception:
-        import ipdb; ipdb.set_trace()
+        raise AttributeError(f"{vkey} not in entry")
     for i, w in enumerate(words):
         term = re.sub(r"{(.+)}", r"\1", w)
         found = term in abbrevs and abbrevs[term] != "n.a." and abbrevs[term]
@@ -390,5 +394,17 @@ def abbreviate_venue(ent):
     return ent
 
 
-def check_author_names(ent):
+def remove_url_doi_file(ent: Dict[str, str]):
+    if "url" in ent:
+        url = ent.pop("url")
+        if ent["ENTRYTYPE"] == "misc" and "howpublished" not in ent:
+            ent["howpublished"] = f'\\url{{{url}}}'
+    if "doi" in ent:
+        ent.pop("doi")
+    if "file" in ent:
+        ent.pop("file")
+    return ent
+
+
+def check_author_names(ent: Dict[str, str]):
     check_for_unicode = None

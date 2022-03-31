@@ -115,12 +115,23 @@ def generate_bibtex(in_file: Path, metadata: Dict, style: str,
     return str(out_file)
 
 
+# TODO: `t` should be a hook from which the functions can be appended or
+#       removed.
 def transform_bibtex(entries: List[Dict[str, str]]) -> List[str]:
+    """Transform bibtex entries according to given functions.
+
+    Args:
+        entries: Bibtex entries as a dictionary
+
+    The functions are applied in order.
+
+    """
     # Can either use abbreviate after full names or contractions
     t = compose(transforms.abbreviate_venue,
                 transforms.change_to_title_case,
                 transforms.standardize_venue,
-                transforms.normalize)
+                transforms.normalize,
+                transforms.remove_url_doi_file)
     # t = compose(transforms.change_to_title_case,
     #             transforms.contract_venue,
     #             transforms.normalize)

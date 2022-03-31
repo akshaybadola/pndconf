@@ -395,7 +395,6 @@ class Configuration:
                 bib_cmd = ""
             command_str = " ".join([str(self.pandoc_path), ' '.join(command)])
             command = []
-            # import ipdb; ipdb.set_trace()
             if ft == 'pdf':
                 command = [command_str]
                 if sed_cmd:
@@ -410,6 +409,7 @@ class Configuration:
                     command.append(f"cd {output_dir} && {pdflatex}")
                     # NOTE: biber and pdflatex again if no citeproc
                     if self.no_cite_cmd:
+                        command.append(f"cd {output_dir} && {pdflatex}")
                         logbi(f"Not running {bib_cmd} as asked.")
                     if self.no_citeproc and not self.no_cite_cmd:
                         if bib_cmd == "biber" and bib_file:
