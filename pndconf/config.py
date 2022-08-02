@@ -359,6 +359,11 @@ class Configuration:
                         command.append(f"{k} {out_file}")
                     else:
                         command.append(f"{k} {v}" if v else f"{k}")
+            if self.pandoc_version.geq("2.14.2") and "-S" in command:
+                command.remove("-S")
+                for i, c in enumerate(command):
+                    if "markdown+simple_tables" in c:
+                        command[i] += "+smart"
             if self.no_citeproc and "--filter=pandoc-citeproc" in command:
                 command.remove("--filter=pandoc-citeproc")
             else:
