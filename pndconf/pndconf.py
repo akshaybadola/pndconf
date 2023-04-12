@@ -122,10 +122,10 @@ def get_config(args: SimpleNamespace, extra: SimpleNamespace) -> Configuration:
     for i, arg in enumerate(extra):
         if not arg.startswith('-'):
             if not (i >= 1 and extra[i-1] == "-V"):
-                loge(f"pandoc option {arg} must be preceded with -, e.g. -{arg} or --{arg}=some_val")
+                loge(f"Unknown pdfconf option {arg}.\nIf it's a pandoc option {arg}, it must be preceded with -, e.g. -{arg} or --{arg}=some_val")
                 sys.exit(1)
         if arg.startswith('--') and '=' not in arg:
-            loge(f"pandoc option {arg} must be joined with =. e.g. {arg}=some_val")
+            loge(f"Unknown pdfconf option {arg}.\nIf it's a pandoc option {arg}, it must be joined with =. e.g. {arg}=some_val")
             sys.exit(1)
     logbi(f"Will generate for {args.generation.upper()}")
     logbi(f"Extra pandoc args are {extra}")

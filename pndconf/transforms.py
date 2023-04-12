@@ -374,7 +374,7 @@ def change_to_title_case(ent: Dict[str, str]) -> Dict[str, str]:
     return ent
 
 
-def abbreviate_venue(ent: Dict[str, str]):
+def abbreviate_venue(ent: Dict[str, str]) -> Dict[str, str]:
     if ent["ENTRYTYPE"] == "inproceedings":
         vkey = "booktitle"
     elif ent["ENTRYTYPE"] == "article":
@@ -394,15 +394,33 @@ def abbreviate_venue(ent: Dict[str, str]):
     return ent
 
 
-def remove_url_doi_file(ent: Dict[str, str]):
+def date_to_year_month(ent: Dict[str, str]) -> Dict[str, str]:
+    months = dict(zip(range(1, 13), [x[:3] for x in ["January", "February",
+                                                     "March", "April", "May", "June", "July", "August",
+                                                     "September", "October", "November", "December"]]))
+    if "date" in ent:
+        date = ent.pop("date").split("-")
+        if len(date) == 1:
+            ent["year"] = date[0]
+        else:
+            year, month = date[0], date[1]
+            ent["year"] = year
+            ent["month"] = months[int(month)]
+    return ent
+
+
+def remove_keys(ent: Dict[str, str], keys: List[str]) -> Dict[str, str]:
+    for key in keys:
+        if key in ent:
+            ent.pop(key)
+    return ent
+
+
+def remove_url(ent: Dict[str, str]) -> Dict[str, str]:
     if "url" in ent:
         url = ent.pop("url")
         if ent["ENTRYTYPE"] == "misc" and "howpublished" not in ent:
             ent["howpublished"] = f'\\url{{{url}}}'
-    if "doi" in ent:
-        ent.pop("doi")
-    if "file" in ent:
-        ent.pop("file")
     return ent
 
 

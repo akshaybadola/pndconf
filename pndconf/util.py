@@ -6,6 +6,7 @@ import time
 import datetime
 import importlib
 from pathlib import Path
+from functools import partial
 from subprocess import Popen, PIPE
 
 from bibtexparser import bparser, bwriter
@@ -16,13 +17,21 @@ from . import transforms
 
 
 class Debounce:
-    # Should we instead make a class where all events are timed?
-    def __init__(self, interval=10):
+    """Debounce class for file watching.
+
+    Run the commands after a specified number of seconds has elapsed
+
+    Args:
+        interval: The interal in milliseconds to wait
+
+
+    """
+    def __init__(self, interval: Union[int, float] = 10):
         self.interval = interval / 1000
         self._reset()
 
     def _reset(self):
-        self.start = 0
+        self.start: Union[int, float] = 0
         self.started = False
 
     def _start(self):
@@ -79,7 +88,6 @@ def generate_bibtex(in_file: Path, metadata: Dict, style: str,
     Conflicts:
 
     """
-    # import ipdb; ipdb.set_trace()
     out_file = in_file.parent.joinpath(in_file.stem + ".bib")
     bib_files = metadata.get("bibliography", [])
     splits = []
@@ -117,6 +125,8 @@ def generate_bibtex(in_file: Path, metadata: Dict, style: str,
 
 # TODO: `t` should be a hook from which the functions can be appended or
 #       removed.
+# TODO: Not only should they be removable, but it should be configurable
+#       via a config file
 def transform_bibtex(entries: List[Dict[str, str]]) -> List[str]:
     """Transform bibtex entries according to given functions.
 
@@ -131,7 +141,9 @@ def transform_bibtex(entries: List[Dict[str, str]]) -> List[str]:
                 transforms.change_to_title_case,
                 transforms.standardize_venue,
                 transforms.normalize,
-                transforms.remove_url_doi_file)
+                transforms.remove_url,
+                # transforms.date_to_year_month,
+                partial(transforms.remove_keys, keys=["file"]))  # HACK: leave doi for now
     # t = compose(transforms.change_to_title_case,
     #             transforms.contract_venue,
     #             transforms.normalize)
@@ -240,7 +252,7 @@ def load_user_module(modname):
     spec = importlib.machinery.PathFinder.find_spec(modname)
     if spec is None:
         return None
-    mod = importlib.util.module_from_spec(spec)
+    mod = importlib.util.module_from_spec(spec)  # type: ignore
     sys.modules[modname] = mod
     spec.loader.exec_module(mod)
     return mod
