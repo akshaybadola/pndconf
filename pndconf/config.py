@@ -48,6 +48,7 @@ class Configuration:
         self._conf = configparser.ConfigParser()
         self._conf.optionxform = str
         self._conf.read(self._config_file)
+        self._filetypes = [k for k in self._conf.keys() if k != "DEFAULT"]
         self._excluded_regexp: List[str] = []
         self._excluded_extensions: List[str] = []
         self._excluded_folders: List[str] = []
@@ -159,7 +160,9 @@ class Configuration:
                             any options present in the config file
                             or those mentioned in the yaml header inside the file.
 
-        However, if multiple options like \"--filter\" or \"-V\" are provided
+        Called externally from the main process.
+
+        If multiple options like \"--filter\" or \"-V\" are provided
         then they are merged with existing options. In effect filters can be
         added but not removed. This may change in future versions of this
         module.
@@ -252,147 +255,6 @@ class Configuration:
 
         commands = Commands(self, in_file, in_file_text, in_file_pandoc_opts)
         return commands.build_commands()
-        # # TODO: The commands should be validated
-        # #
-        # #       E.g: Say "-V colors=true" is given from
-        # #       config and "V colors=false" is given from cmdline
-        # #       cmdline should override the earlier one.
-        # for ft in self._filetypes:
-        #     command: List[str] = []
-        #     update_in_file_paths(in_file_pandoc_opts, self.csl_dir, self.templates_dir, in_file)
-        #     for k, v in self._conf[ft].items():
-        #         if k == '-M':
-        #             msg = loge("Metadata field setting is not supported")
-        #             raise AttributeError(msg)
-        #         elif k == '-V':
-        #             cmdline_template_keys = [x.split('=')[0]
-        #                                      for x in self.cmdline_opts.get("-V", "").split(",")
-        #                                      if x]
-        #             conf_template_keys = [x.split('=')[0]
-        #                                   for x in self._conf[ft].get("-V", "").split(",")
-        #                                   if x]
-        #             config_keys = set(conf_template_keys) - set(cmdline_template_keys)
-        #             template_vars = set()
-        #             for x in v.split(","):
-        #                 val = f"-V {x.strip()}"
-        #                 tvar = x.strip().split("=")[0]
-        #                 if tvar in config_keys and tvar in in_file_pandoc_opts:
-        #                     continue
-        #                 if tvar in template_vars:
-        #                     msg = f"{tvar} being overridden"
-        #                     logw(msg)
-        #                 template_vars.add(tvar)
-        #                 if val not in command:
-        #                     command.append(val)
-        #         elif k.startswith('--'):
-        #             # pandoc options, warn if override
-        #             k = k[2:]
-        #             if k == "template":
-        #                 v = template_subr(v, self.templates_dir, in_file)
-        #             elif k == "csl":
-        #                 v = csl_subr(v, self.csl_dir, in_file)
-        #             if k == "filter":
-        #                 self.add_filters(command, k, v)
-        #             else:
-        #                 if k in in_file_pandoc_opts:
-        #                     if k in self.cmdline_opts:
-        #                         if k == "bibliography":
-        #                             v = str(Path(v).absolute())
-        #                         update_command(command, k, v)
-        #                 else:
-        #                     command.append(f"--{k}={v}" if v else f"--{k}")
-        #         else:
-        #             if k == '-o':
-        #                 out_file = out_path_no_ext + "." + v
-        #                 command.append(f"{k} {out_file}")
-        #             else:
-        #                 command.append(f"{k} {v}" if v else f"{k}")
-        #     if self.pandoc_version.geq("2.14.2") and "-S" in command:
-        #         command.remove("-S")
-        #         for i, c in enumerate(command):
-        #             if "markdown+simple_tables" in c:
-        #                 command[i] += "+smart"
-        #     if self.no_citeproc and "--filter=pandoc-citeproc" in command:
-        #         command.remove("--filter=pandoc-citeproc")
-        #     else:
-        #         if self.pandoc_version.geq("2.12") and "--filter=pandoc-citeproc" in command:
-        #             command.remove("--filter=pandoc-citeproc")
-        #             if not self.no_citeproc:
-        #                 command.insert(0, "--citeproc")
-        #     if self.no_citeproc:
-        #         bib_cmds = {"--natbib": "bibtex", "--biblatex": "biblatex"}
-        #         if not any([x in command for x in bib_cmds]):
-        #             msg = "Not using citeproc and no other citation processor given. " +\
-        #                 "Will use bibtex as default."
-        #             logw(msg)
-        #             bib_cmd = "bibtex"
-        #         else:
-        #             bib_cmd = [(k, v) for k, v in bib_cmds.items()][0][1]
-        #         if bib_cmd == "bibtex":
-        #             command.append("--natbib")
-        #             sed_cmd = "sed -i 's/\\\\citep{/\\\\cite{/g' " +\
-        #                 os.path.join(output_dir, filename_no_ext) + ".tex"
-        #         elif bib_cmd == "biblatex":
-        #             command.append("--biblatex")
-        #             sed_cmd = ""
-        #         else:
-        #             raise ValueError(f"Unknown citation processor {bib_cmd}")
-        #         if "references" in in_file_pandoc_opts:
-        #             bib_style = "biblatex" if bib_cmd == "biblatex" else "bibtex"
-        #             bib_style = "biblatex"
-        #             bib_file = generate_bibtex(Path(in_file), in_file_pandoc_opts, bib_style,
-        #                                        in_file_text, self.pandoc_path)
-        #         else:
-        #             bib_file = ""
-        #     else:
-        #         sed_cmd = ""
-        #         bib_cmd = ""
-        #     command_str = " ".join([str(self.pandoc_path), ' '.join(command)])
-        #     command = []
-        #     if ft == 'pdf':
-        #         command = [command_str]
-        #         if sed_cmd:
-        #             command.append(sed_cmd)
-        #         if "-o" in self._conf[ft] and self._conf[ft]["-o"] != "pdf":
-        #             tex_files_dir = output_dir if self.same_output_dir else\
-        #                 f"{out_path_no_ext}_files"
-        #             command.append(f"cd {output_dir} && mkdir -p {tex_files_dir}")
-        #             if not self.no_cite_cmd and (not tex_files_dir == output_dir):
-        #                 # Don't clean output directory for tex if same_output_dir
-        #                 command.append(f"rm {tex_files_dir}/*")
-        #             command.append(f"cd {output_dir} && {pdflatex}")
-        #             # NOTE: biber and pdflatex again if no citeproc
-        #             if self.no_cite_cmd:
-        #                 command.append(f"cd {output_dir} && {pdflatex}")
-        #                 logbi(f"Not running {bib_cmd} as asked.")
-        #             if self.no_citeproc and not self.no_cite_cmd:
-        #                 if bib_cmd == "biber" and bib_file:
-        #                     biber = f"biber {tex_files_dir}/{filename_no_ext}.bcf"
-        #                     command.append(f"cd {output_dir} && {biber}")
-        #                     command.append(f"cd {output_dir} && {pdflatex}")
-        #                 elif bib_cmd == "bibtex":
-        #                     bibtex = f"bibtex {filename_no_ext}"
-        #                     command.append(f"cd {output_dir} && cp {bib_file} {tex_files_dir}/")
-        #                     command.append(f"cd {tex_files_dir} && {bibtex}")
-        #                     if not self.same_output_dir:
-        #                         pdflatex = pdflatex.replace(f'{out_path_no_ext}.tex',
-        #                                                     f'../{Path(out_path_no_ext).stem}.tex')
-        #                     # NOTE: pdflatex has to be run twice after bibtex,
-        #                     #       can't we just use biblatex?
-        #                     command.append(f"cd {tex_files_dir} && {pdflatex}")
-        #                     command.append(f"cd {tex_files_dir} && {pdflatex}")
-        #                 else:
-        #                     raise logw("No citation processor specified. References may not be defined correctly.")
-        #             out_file = str(Path(out_path_no_ext + '_files').joinpath(filename_no_ext + ".pdf"))
-        #         else:
-        #             out_file = out_path_no_ext + ".pdf"
-        #     cmd = [*map(compress_space, command)] if command else compress_space(command_str)
-        #     commands[ft] = {"command": cmd,
-        #                     "in_file": in_file,
-        #                     "out_file": out_file,
-        #                     "in_file_opts": in_file_pandoc_opts,
-        #                     "text": in_file_text}
-        # return commands
 
     def set_included_extensions(self, included_file_extensions):
         self._included_extensions = included_file_extensions

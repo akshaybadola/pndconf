@@ -183,7 +183,7 @@ def is_tex_command(cmd: str) -> bool:
                 for s in splits])
 
 
-def exec_command(command: str, input: Optional[str] = None, noshell: bool = False):
+def exec_command(command: str, stdin: Optional[str] = None, noshell: bool = False):
     """Execute a command via :class:`Popen`.
 
     The command is exectued with `shell=True`. Use `noshell=True` for inverting
@@ -191,7 +191,7 @@ def exec_command(command: str, input: Optional[str] = None, noshell: bool = Fals
 
     Args:
         command: The command to execute
-        input: Optional input to give to command via stdin
+        stdin: Optional input to give to command via stdin
         noshell: Whether not to use shell
 
     Aside from arbitrary shell commands, `pdftex`, `pdflatex` and `biber` are
@@ -222,9 +222,9 @@ def exec_command(command: str, input: Optional[str] = None, noshell: bool = Fals
             print(f"Error occured while compiling file {e}")
             return False
     else:
-        if input:
+        if stdin:
             p = Popen(command, stdin=PIPE, stdout=PIPE, stderr=PIPE, shell=shell)
-            output = p.communicate(input=input.encode())
+            output = p.communicate(stdin=stdin.encode())
         else:
             p = Popen(command, stdout=PIPE, stderr=PIPE, shell=shell)
             output = p.communicate()

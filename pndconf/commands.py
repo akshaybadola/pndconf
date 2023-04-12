@@ -1,68 +1,69 @@
 from typing import Dict, Union, List, Optional, Callable
 import os
-import re
 from pathlib import Path
 
 from common_pyutil.functional import unique
 
 from .util import (update_command, get_csl_or_template, expandpath,
-                   generate_bibtex, compress_space, load_user_module,
+                   generate_bibtex, compress_space,
                    logd, loge, logi, logbi, logw)
 
 
 Pathlike = Union[str, Path]
 
 
-def csl_subr(v: str, csl_dir: Optional[Path], in_file: str):
-    """Subroutine to get file name from csl name.
+def get_template_or_csl_subr(argtype: str, csl_or_template: str,
+                             search_dir: Optional[Path], in_file: str):
+    """Subroutine to get possible file name from csl or template name.
 
     Args:
-        v: String value representing CSL
+        argtype: Type of files to search, one of "csl" Or "template"
+        csl_or_template: String value representing CSL or Pandoc Template
+        search_dir: The path where possible file candidates are stored
+        in_file: The input file path
 
-    :code:`v` can be a full path, a relative path or simply a string sans
+    :code:`csl_or_template` can be a full path, a relative path or simply a string sans
     extension. Its existence is checked in order:
     full_path > self.csl_dir > relative_path
 
     Where relative_path is the path relative to input file
 
     """
-    if Path(v).exists():
-        v = expandpath(v)
-    elif csl_dir:
-        v = get_csl_or_template("csl", v, csl_dir)
-    elif "csl" in [x.name for x in Path(in_file).parent.iterdir()]:
-        check_dir = Path(in_file).parent.joinpath("csl").absolute()
-        v = get_csl_or_template("csl", v, check_dir)
+    if Path(csl_or_template).exists():
+        maybe_file = expandpath(csl_or_template)
+    elif search_dir:
+        maybe_file = get_csl_or_template(argtype, csl_or_template, search_dir)
+    if Path(maybe_file).exists():
+        return maybe_file
+    if argtype in [x.name for x in Path(in_file).parent.iterdir()]:
+        check_dir = Path(in_file).parent.joinpath(argtype).absolute()
+        maybe_file = get_csl_or_template(argtype, csl_or_template, check_dir)
+    if Path(maybe_file).exists():
+        return maybe_file
     else:
-        raise AttributeError(f"CSL file for {v} not found")
-    return str(v)
-
-
-def template_subr(v: str, templates_dir: Optional[Path], in_file: str):
-    if Path(v).exists():
-        v = expandpath(v)
-    elif templates_dir:
-        v = get_csl_or_template("template", v, templates_dir)
-    elif "templates" in [x.name for x in Path(in_file).parent.iterdir()]:
-        check_dir = Path(in_file).parent.joinpath("templates").absolute()
-        v = get_csl_or_template("template", v, check_dir)
-    else:
-        raise AttributeError(f"Template file for {v} not found")
-    return str(v)
+        check_dir = Path(in_file).parent
+        maybe_file = get_csl_or_template(argtype, csl_or_template, check_dir)
+        if Path(maybe_file).exists():
+            return maybe_file
+        else:
+            logw(f"{argtype} file for \"{csl_or_template}\" not found. "
+                 "This will default to pandoc template if it exists")
+            return maybe_file
 
 
 def update_in_file_paths(in_file_pandoc_opts: Dict[str, str], csl_dir: Optional[Path],
                          templates_dir: Optional[Path], in_file: str):
     if "csl" in in_file_pandoc_opts:
-        v = csl_subr(in_file_pandoc_opts["csl"], csl_dir, in_file)
+        v = get_template_or_csl_subr("csl", in_file_pandoc_opts["csl"], csl_dir, in_file)
+        # v = csl_subr(in_file_pandoc_opts["csl"], csl_dir, in_file)
         in_file_pandoc_opts["csl"] = v
     if "template" in in_file_pandoc_opts:
-        v = template_subr(in_file_pandoc_opts["template"], templates_dir, in_file)
+        v = get_template_or_csl_subr("template", in_file_pandoc_opts["template"], templates_dir, in_file)
+        # v = template_subr(in_file_pandoc_opts["template"], templates_dir, in_file)
         in_file_pandoc_opts["template"] = v
     for k, v in in_file_pandoc_opts.items():
         if isinstance(v, str) and v.startswith("./"):
             in_file_pandoc_opts[k] = str(Path(in_file).parent.absolute().joinpath(v))
-
 
 
 class Commands:
@@ -100,7 +101,6 @@ class Commands:
         msg = loge("Metadata field setting is not supported")
         raise AttributeError(msg)
 
-
     def handle_variable_field(self, ft, value, command):
         cmdline_template_keys = [x.split('=')[0]
                                  for x in self.config.cmdline_opts.get("-V", "").split(",")
@@ -125,26 +125,24 @@ class Commands:
     def handle_pandoc_field(self, key, value, command):
         # pandoc options, warn if override
         k = key[2:]
-        if k == "template":
-            v = template_subr(value, self.config.templates_dir, self.in_file)
-        elif k == "csl":
-            v = csl_subr(value, self.config.csl_dir, self.in_file)
+        if k in {"template", "csl"}:
+            v = get_template_or_csl_subr(k, value, self.config.templates_dir, self.in_file)
         else:
             v = value
         if k == "filter":
             self.add_filters(command, k, v)
+        elif k in self.file_pandoc_opts:
+            if k in self.config.cmdline_opts:
+                if k == "bibliography":
+                    v = str(Path(v).absolute())
+                update_command(command, k, v)
         else:
-            if k in self.file_pandoc_opts:
-                if k in self.config.cmdline_opts:
-                    if k == "bibliography":
-                        v = str(Path(v).absolute())
-                    update_command(command, k, v)
-            else:
-                command.append(f"--{k}={v}" if v else f"--{k}")
+            command.append(f"--{k}={v}" if v else f"--{k}")
 
     def handle_outfile_field(self, value, command):
         out_file = self.out_path_no_ext + "." + value
         command.append(f"-o {out_file}")
+        return out_file
 
     def add_filters(self, command, k, v):
         vals = unique(v.split(","))
@@ -159,7 +157,7 @@ class Commands:
             output_dir = file_dir
             logw("Will output to same dir as input file.")
         else:
-            output_dir = self.output_dir
+            output_dir = self.config.output_dir
         return output_dir
 
     def fix_command_for_pandoc_versions(self, command):
@@ -176,10 +174,17 @@ class Commands:
                 if not self.config.no_citeproc:
                     command.insert(0, "--citeproc")
 
-    def add_bibliography_opts(self, command):
+    # FIXME: The bibliography part is a bit of a mess. The correct precedence of
+    #        option parsing has to be validated
+    def get_bibliography_opts(self, command):
+        """Get the appropriate bibliography options.
+
+        Both configuration and file specific options are (SHOULD BE) checked.
+        """
+
         if self.config.no_citeproc:
             bib_cmds = {"--natbib": "bibtex", "--biblatex": "biblatex"}
-            if not any([x in command for x in bib_cmds]):
+            if not any(x in command for x in bib_cmds):
                 msg = ("Not using citeproc and no other citation processor given. "
                        "Will use bibtex as default.")
                 logw(msg)
@@ -194,67 +199,96 @@ class Commands:
                 command.append("--biblatex")
                 sed_cmd = ""
             else:
+                # FIXME: practically unreachable code
                 raise ValueError(f"Unknown citation processor {bib_cmd}")
-            if "references" in self.file_pandoc_opts:
-                bib_style = "biblatex" if bib_cmd == "biblatex" else "bibtex"
-                # NOTE: always biblatex and then convert to bibtex like syntax (I think LOL)
-                bib_style = "biblatex"
-                bib_file = generate_bibtex(Path(self.in_file), self.file_pandoc_opts, bib_style,
-                                           self.file_text, self.config.pandoc_path)
-            else:
-                bib_file = ""
+            # if "references" in self.file_pandoc_opts:
+            #     bib_style = "biblatex" if bib_cmd == "biblatex" else "bibtex"
+            # else:
+            #     bib_style = ""
+            # NOTE: always biblatex and then convert to bibtex like syntax (I think LOL)
+            bib_style = "biblatex" if "references" in self.file_pandoc_opts else ""
         else:
+            bib_style = ""
             sed_cmd = ""
             bib_cmd = ""
-        return bib_style, bib_file, bib_cmd, sed_cmd
+        return bib_style, bib_cmd, sed_cmd
+
+    def pdf_cmd_switch_to_output_dir(self, mk_tex_files_dir):
+        return f"cd {self.output_dir} {mk_tex_files_dir}"
+
+    def get_pdf_output_dir(self):
+        if self.config.same_output_dir:
+            tex_files_dir = self.output_dir
+            mk_tex_files_dir = ""
+        else:
+            tex_files_dir = f"{self.out_path_no_ext}_files"
+            mk_tex_files_dir = f"&& mkdir -p {tex_files_dir}"
+        return tex_files_dir, mk_tex_files_dir
 
     def add_pdf_specific_options(self, command, ft):
-        bib_sytle, bib_file, bib_cmd, sed_cmd = self.add_bibliography_opts(command)
-        pandoc_cmd = " ".join([str(self.config.pandoc_path), ' '.join(command)])
-        command = [pandoc_cmd]
+        # CHECK: If we don't use pdflatex explicitly but still use bibtex/biblatex
+        #        for bibliography, can we still use pandoc with that?
+        #        I think we can specify bibliography files but I don't need these
+        #        commands then
+        bib_style, bib_cmd, sed_cmd = self.get_bibliography_opts(command)
+        if bib_cmd and bib_style and not self.config.no_cite_cmd:
+            bib_file = generate_bibtex(Path(self.in_file), self.file_pandoc_opts, bib_style,
+                                       self.file_text, self.config.pandoc_path)
+        pdf_cmd = []
         if sed_cmd:
-            command.append(sed_cmd)
+            pdf_cmd.append(sed_cmd)
+
+        # NOTE: Output filetype was PDF but generation was tex in config
+        #       OR use explicit pdflatex for pdf instead of pandoc's engine
+        # FIXME: This should be more explicit somewhere
         if "-o" in self.config.conf[ft] and self.config.conf[ft]["-o"] != "pdf":
-            tex_files_dir = self.output_dir if self.config.same_output_dir else\
-                f"{self.out_path_no_ext}_files"
-            command.append(f"cd {self.output_dir}" +
-                           (f"&& mkdir -p {tex_files_dir}"
-                            if not self.output_dir == tex_files_dir else ""))
-            if not self.config.no_cite_cmd and (not tex_files_dir == self.output_dir):
-                # Don't clean output directory for tex if same_output_dir
-                command.append(f"rm {tex_files_dir}/*")
-            command.append(f"cd {self.output_dir} && {self.pdflatex}")
-            # NOTE: biber and pdflatex again if no citeproc
+            tex_files_dir, mk_tex_files_dir = self.get_pdf_output_dir()
+            pdf_cmd.append(self.pdf_cmd_switch_to_output_dir(mk_tex_files_dir))
+            if self.config.no_cite_cmd or self.config.same_output_dir:
+                pdf_cmd.append(f"rm {tex_files_dir}/*")
+            pdf_cmd.append(f"{self.pdflatex}")
+
             if self.config.no_cite_cmd:
-                command.append(f"cd {self.output_dir} && {self.pdflatex}")
                 logbi(f"Not running {bib_cmd} as asked.")
+
             if self.config.no_citeproc and not self.config.no_cite_cmd:
                 if bib_cmd == "biber" and bib_file:
                     biber = f"biber {tex_files_dir}/{self.filename_no_ext}.bcf"
-                    command.append(f"cd {self.output_dir} && {biber}")
-                    command.append(f"cd {self.output_dir} && {self.pdflatex}")
+                    pdf_cmd.append(f"cd {self.output_dir} && {biber}")
+                    pdf_cmd.append(f"cd {self.output_dir} && {self.pdflatex}")
                 elif bib_cmd == "bibtex":
                     bibtex = f"bibtex {self.filename_no_ext}"
-                    command.append(f"cd {self.output_dir} && cp {bib_file} {tex_files_dir}/")
-                    command.append(f"cd {tex_files_dir} && {bibtex}")
-                    if not self.config.same_output_dir:
+                    copy_bibtex = "" if self.config.same_output_dir else f"&& cp {bib_file} {tex_files_dir}/"
+                    pdf_cmd.append(f"cd {self.output_dir} {copy_bibtex}")
+                    pdf_cmd.append(f"cd {tex_files_dir} && {bibtex}")
+                    if self.config.same_output_dir:
+                        pdflatex = self.pdflatex
+                    else:
                         pdflatex = self.pdflatex.replace(f'{self.out_path_no_ext}.tex',
                                                          f'../{Path(self.out_path_no_ext).stem}.tex')
-                    else:
-                        pdflatex = self.pdflatex
                     # NOTE: pdflatex has to be run twice after bibtex,
                     #       can't we just use biblatex?
-                    command.append(f"cd {tex_files_dir} && {pdflatex}")
-                    command.append(f"cd {tex_files_dir} && {pdflatex}")
+                    pdf_cmd.append(f"cd {tex_files_dir} && {pdflatex}")
+                    pdf_cmd.append(f"cd {tex_files_dir} && {pdflatex}")
                 else:
                     raise logw("No citation processor specified. References may not be defined correctly.")
             out_file = str(Path(self.out_path_no_ext + '_files').
                            joinpath(self.filename_no_ext + ".pdf"))
         else:
             out_file = self.out_path_no_ext + ".pdf"
-        return out_file, command
+        return out_file, pdf_cmd
 
     def build_commands(self) -> Dict[str, Dict[str, Union[List[str], str]]]:
+        """Build the command line from various options for given filetypes
+
+        The filetypes are parsed and then queried from configuration :class:`Configuration`
+        alongwith other parameters like :code:`output_directory`, pandoc configuration
+        etc.
+
+        The commands is a :class:`dict` with filetypes as keys and for each
+        filetype, the commands of each are accumulated in a list in place.
+
+        """
         commands = {}
         for ft in self.config.filetypes:
             command: List[str] = []
@@ -266,20 +300,25 @@ class Commands:
                 elif k == '-V':
                     self.handle_variable_field(ft, v, command)
                 elif k.startswith('--'):
-                    self.handle_pandoc_field(ft, v, command)
+                    self.handle_pandoc_field(k, v, command)
                 elif k == '-o':
-                    self.handle_outfile_field(v, command)
+                    out_file = self.handle_outfile_field(v, command)
                 else:
                     command.append(f"{k} {v}" if v else f"{k}")
 
             self.fix_command_for_pandoc_versions(command)
 
+            # TODO: Add EXPLICIT option in config (and warn when implicit) for
+            #       pdf generation via pdflatex
             if ft == 'pdf':
-                out_file, command = self.add_pdf_specific_options(command, ft)
+                out_file, pdf_cmd = self.add_pdf_specific_options(command, ft)
+            else:
+                pdf_cmd = ""
 
-            command_str = " ".join([str(self.config.pandoc_path), ' '.join(command)])
+            pandoc_cmd = " ".join([str(self.config.pandoc_path), ' '.join([*command])])
 
-            cmd = [*map(compress_space, command)] if command else compress_space(command_str)
+            cmd = [*map(compress_space, [pandoc_cmd, *pdf_cmd])]\
+                if pdf_cmd else compress_space(pandoc_cmd)
             commands[ft] = {"command": cmd,
                             "in_file": self.in_file,
                             "out_file": out_file,

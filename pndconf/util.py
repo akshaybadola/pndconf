@@ -90,6 +90,8 @@ def generate_bibtex(in_file: Path, metadata: Dict, style: str,
     """
     out_file = in_file.parent.joinpath(in_file.stem + ".bib")
     bib_files = metadata.get("bibliography", [])
+    if isinstance(bib_files, str):
+        bib_files = [bib_files]
     splits = []
     for bf in bib_files:
         with open(bf) as f:
@@ -180,7 +182,7 @@ def update_command(command: List[str], k: str, v: str) -> None:
     command.append(f"--{k}={v}")
 
 
-def get_csl_or_template(key: str, val: str, dir: Path):
+def get_csl_or_template(key: str, val: str, dir: Path) -> str:
     """Get CSL or template file according to the value :code:`val`
 
     Args:
