@@ -35,7 +35,8 @@ def test_commands_should_get_correct_bibliography_opts(config):
     config.no_citeproc = True
     commands = Commands(config, in_file, text, pandoc_opts)
     bibopts = commands.get_bibliography_opts(cmd)
-    assert bibopts == ('biblatex', 'bibtex', "sed -i 's/\\\\citep{/\\\\cite{/g' /home/joe_old/lib/pndconf/article.tex")
+    article_path = str(Path(".").absolute().joinpath("article.tex"))
+    assert bibopts == ('biblatex', 'bibtex', "sed -i 's/\\\\citep{/\\\\cite{/g' " + article_path)
 
 def test_commands_should_generate_correct_pdf_options(config):
     in_file = Path("./examples/article.md")

@@ -5,9 +5,9 @@ from pathlib import Path
 from common_pyutil.functional import unique
 
 from .util import (update_command, get_csl_or_template, expandpath,
-                   generate_bibtex, compress_space,
-                   logd, loge, logi, logbi, logw)
+                   compress_space, logd, loge, logi, logbi, logw)
 
+from .bibliography import generate_bibtex
 
 Pathlike = Union[str, Path]
 

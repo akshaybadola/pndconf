@@ -246,8 +246,8 @@ def load_abbrevs(abbrevs_file):
         reader = csv.reader(f, delimiter=";")
         for line in reader:
             lines.append(line)
-    return dict((re.sub("-$", ".+", x[0].lower()), x[1].lower())
-                for x in lines if "eng" in x[-1] or x[-1] == "mul")
+    return {re.sub("-$", ".+", x[0].lower()): x[1].lower()
+            for x in lines if "eng" in x[-1] or x[-1] == "mul"}
 
 
 def get_abbrev(abbrev_regexps, word):
@@ -339,7 +339,7 @@ def contract_venue(ent: Dict[str, str]):
     See :func:`fix_venue`.
 
     """
-    return fix_venue(ent, True)
+    return fix_venue(ent, contract=True)
 
 
 def change_to_title_case(ent: Dict[str, str]) -> Dict[str, str]:
@@ -358,18 +358,10 @@ def change_to_title_case(ent: Dict[str, str]) -> Dict[str, str]:
             capitalize_next = False
             for i, x in enumerate(filter(lambda x: x and not re.match(r"^ +$", x),
                                          re.split(r"( +|-)", val))):
-                if x.startswith("{") or x.upper() == x:
-                    temp.append(x)
-                elif i == 0 or capitalize_next:
-                    temp.append(x.capitalize())
-                elif not (x in stop_words_set):
-                    temp.append(x.capitalize())
-                else:
-                    temp.append(x)
-                if x.endswith(".") or x.endswith(":"):
-                    capitalize_next = True
-                else:
-                    capitalize_next = False
+                cap = (not i) or capitalize_next or x not in stop_words_set
+                y = x.capitalize() if cap else x
+                temp.append(y)
+                capitalize_next = bool(x.endswith((".", ":")))
             ent[key] = " ".join([x if x.startswith("{") else "{" + x + "}" for x in temp])
     return ent
 

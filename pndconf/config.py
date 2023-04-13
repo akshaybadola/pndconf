@@ -9,9 +9,7 @@ from glob import glob
 import yaml
 from common_pyutil.system import Semver
 
-from .util import (update_command, get_csl_or_template, expandpath,
-                   generate_bibtex, compress_space, load_user_module,
-                   logd, loge, logi, logbi, logw)
+from .util import load_user_module, logd, loge, logi, logbi, logw
 from .compilers import markdown_compile
 from .commands import Commands
 
@@ -56,6 +54,7 @@ class Configuration:
         self._excluded_files: List[str] = []
         self.same_output_dir = same_output_dir
         self.dry_run = dry_run
+        self._log_file = None
         # self._use_extra_opts = extra_opts
         # self._extra_opts = {"latex-preproc": None}
         self._debug_levels = ["error", "warning", "info", "debug"]
