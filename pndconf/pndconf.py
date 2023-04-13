@@ -50,7 +50,7 @@ def pandoc_version_and_path(pandoc_path: Optional[Path]):
 
 
 def get_pandoc_help_output(pandoc_path):
-    out, err = Popen([str(pandoc_path), "--help"], stdout=PIPE, stderr=PIPE).communicate()
+    return Popen([str(pandoc_path), "--help"], stdout=PIPE, stderr=PIPE).communicate()
 
 
 def print_pandoc_opts(stdout, stderr):

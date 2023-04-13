@@ -224,7 +224,7 @@ def exec_command(command: str, stdin: Optional[str] = None, noshell: bool = Fals
     else:
         if stdin:
             p = Popen(command, stdin=PIPE, stdout=PIPE, stderr=PIPE, shell=shell)
-            output = p.communicate(stdin=stdin.encode())
+            output = p.communicate(input=stdin.encode())
         else:
             p = Popen(command, stdout=PIPE, stderr=PIPE, shell=shell)
             output = p.communicate()

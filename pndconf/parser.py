@@ -46,7 +46,7 @@ def pandoc_version_and_path(pandoc_path: Optional[Path]):
 
 
 def get_pandoc_help_output(pandoc_path):
-    out, err = Popen([str(pandoc_path), "--help"], stdout=PIPE, stderr=PIPE).communicate()
+    return Popen([str(pandoc_path), "--help"], stdout=PIPE, stderr=PIPE).communicate()
 
 
 def print_pandoc_opts(stdout, stderr):
@@ -135,7 +135,9 @@ def get_config(args: argparse.Namespace, extra: List[str]) -> Configuration:
     logi(f"Pandoc path is {pandoc_path}")
     if args.print_pandoc_opts:
         print_pandoc_opts(out, err)
-    config = Configuration(args.watch_dir, args.output_dir,
+    watch_dir = getattr(args, "watch_dir", None)
+    config = Configuration(watch_dir=watch_dir,
+                           output_dir=args.output_dir,
                            config_file=args.config_file,
                            pandoc_path=pandoc_path,
                            pandoc_version=pandoc_version,
@@ -145,71 +147,21 @@ def get_config(args: argparse.Namespace, extra: List[str]) -> Configuration:
                            post_processor=args.post_processor,
                            same_output_dir=args.same_output_dir,
                            dry_run=args.dry_run)
-    # FIXME: No other args should be given with this
-    if args.print_generation_opts:
-        print_generation_opts(args, config)
-    # NOTE: The program assumes that extensions startwith '.'
-    if args.exclude_regexp:
-        set_exclude_regexps(args, config)
-    if args.inclusions:
-        set_inclusions(args, config)
-    if args.exclusions:
-        set_exclusions(args, config)
-    if not args.generation:
-        loge("Generation options cannot be empty")
-        sys.exit(1)
-
-    maybe_exit_for_unknown_generation_type(args)
-
     set_log_levels_and_maybe_log_pandoc_output(args, config, out)
-
-    validate_extra_args(extra)
-
-    logbi(f"Will generate for {args.generation.upper()}")
-    logbi(f"Extra pandoc args are {extra}")
-    config.set_cmdline_opts(args.generation.split(','), extra)
     return config
 
 
 def add_common_args(parser):
-    parser.add_argument(
-        "--pandoc-path", dest="pandoc_path",
-        default="/usr/bin/pandoc",
-        help="Provide custom pandoc path. Must be full path to executable")
-    parser.add_argument(
-        "-o", "--output-dir", dest="output_dir", default=".",
-        help="Directory for output files. Defaults to current directory")
-    parser.add_argument(
-        "--no-citeproc", action="store_true", dest="no_citeproc",
-        help="Whether to process the citations via citeproc.")
-    parser.add_argument(
-        "-g", "--generation", dest="generation",
-        default="pdf",
-        help=f"Which formats to output. Can be one of [{', '.join(gentypes)}].\n"
-        "Defaults to pdf. You can choose multiple generation at once.\n"
-        "E.g., 'pndconf -g pdf,html' or 'pndconf -g beamer,reveal'")
-    parser.add_argument(
-        "-p", "--post-processor", default="",
-        help="python module (or filename, must be in path) from which to load\n"
-        "post_processor function should be named \"post_processor\"")
-    parser.add_argument(
-        "--templates-dir",
-        help="Directory where templates are placed")
-    parser.add_argument("--csl-dir",
-                        help="Directory where csl files are placed")
-    parser.add_argument("-po", "--print-pandoc-opts", dest="print_pandoc_opts",
-                        action="store_true",
-                        help="Print pandoc options and exit")
-    parser.add_argument("-pg", "--print-generation-opts",
-                        action="store_true",
-                        help="Print pandoc options for filetype (e.g., for 'pdf') and exit")
-    parser.add_argument("-L", "--log-file", dest="log_file",
-                        type=str,
-                        default="",
-                        help="Log file to output instead of stdout. Optional")
-    parser.add_argument("-l", "--log-level", dest="log_level",
-                        default="warning",
-                        help="Debug Level. One of: error, warning, info, debug")
+    parser.add_argument("-o", "--output-dir",
+                        dest="output_dir", default=".",
+                        help="Directory for output files. Defaults to current directory")
+    parser.add_argument("--no-citeproc", action="store_true", dest="no_citeproc",
+                        help="Whether to process the citations via citeproc.")
+    parser.add_argument("-g", "--generation",
+                        dest="generation", default="pdf",
+                        help=f"Which formats to output. Can be one of [{', '.join(gentypes)}].\n"
+                        "Defaults to pdf. You can choose multiple generation at once.\n"
+                        "E.g., 'pndconf -g pdf,html' or 'pndconf -g beamer,reveal'")
     parser.add_argument("--same-output-dir", action="store_true", dest="same_output_dir",
                         help="Output tex files and pdf to same dir as markdown file.\n"
                         "Default is to create a separate folder with a \"_files\" suffix")
@@ -242,6 +194,7 @@ def add_convert_parser(subparsers):
                         help="Don't run extra bibtex or biber commands for citations.\n"
                         "Helpful when pdflatex is run with bibtex etc."
                         "and references need not be updated.")
+    add_common_args(parser)
     return parser
 
 
@@ -284,12 +237,89 @@ def add_watch_parser(subparsers):
     parser.add_argument("--exclude-files", dest="excluded_files",
                               default="",
                               help="Specific files to exclude from watching")
+    add_common_args(parser)
     return parser
 
 
-def bleh(subparsers,args, extra):
-    active_subparser = subparsers[args.command]
-    import ipdb; ipdb.set_trace()
+def watch(args, config):
+    # NOTE: The program assumes that extensions startwith '.'
+    if args.exclude_regexp:
+        set_exclude_regexps(args, config)
+    if args.inclusions:
+        set_inclusions(args, config)
+    if args.exclusions:
+        set_exclusions(args, config)
+    input_files = args.input_files.split(",")
+    logi(f"\nWatching in {os.path.abspath(config.watch_dir)}")
+    # FIXME: Should just put input_files in config
+    if input_files:
+        watched_elements = input_files
+
+        def is_watched(x):
+            return os.path.abspath(x) in watched_elements
+
+        def get_watched():
+            return [os.path.abspath(x) for x in input_files]
+    else:
+        watched_elements = [os.path.basename(w) for w in config.get_watched()]
+        is_watched = config.is_watched
+        get_watched = config.get_watched
+    logi(f"Watching: {watched_elements}")
+    logi(f"Will output to {os.path.abspath(config.output_dir)}")
+    logi("Starting pandoc watcher...")
+    # CHECK: Maybe just pass config directly
+    event_handler = ChangeHandler(config.watch_dir, is_watched,
+                                  get_watched, config.compile_files,
+                                  config.log_level)
+    observer = Observer()
+    observer.schedule(event_handler, str(config.watch_dir), recursive=True)
+    observer.start()
+    try:
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt as err:
+        logi(str(err))
+        # NOTE: Start simple server here when added and asked
+        observer.stop()
+    logi("Stopping pandoc watcher ...")
+    sys.exit(0)
+
+
+def convert(args, config):
+    config.no_cite_cmd = args.no_cite_cmd
+    input_files = args.input_files.split(",")
+    not_input_files = [x for x in input_files if not os.path.exists(x)]
+    if not_input_files:
+        loge(f"{not_input_files} don't exist. Ignoring")
+    input_files = [x for x in input_files if os.path.exists(x)]
+    if not input_files:
+        loge("Error! No input files present or given")
+    elif not all(x.endswith(".md") for x in input_files):
+        loge("Error! Some input files not markdown")
+    else:
+        logbi(f"Will compile {input_files} to {config.output_dir} once.")
+        config.compile_files(input_files)
+
+
+def check_and_dispatch_command(args, extra):
+    config = get_config(args, extra)
+    if args.print_generation_opts:
+        print_generation_opts(args, config)
+    if not args.generation:
+        loge("Generation options cannot be empty")
+        sys.exit(1)
+
+    maybe_exit_for_unknown_generation_type(args)
+    validate_extra_args(extra)
+    logbi(f"Will generate for {args.generation.upper()}")
+    logbi(f"Extra pandoc args are {extra}")
+    config.set_cmdline_opts(args.generation.split(','), extra)
+
+    if args.command == "watch":
+        watch(args, config)
+    elif args.command == "convert":
+        convert(args, config)
+
 
 def main():
     parser = argparse.ArgumentParser("pndconf: Pandoc Configuration Manager and File Watcher",
@@ -314,18 +344,45 @@ def main():
                         help="Dry run. Don't actually do anything.")
     parser.add_argument("--dump-default-config", action="store_true",
                         help="Dump given config or default config.")
+    parser.add_argument(
+        "--pandoc-path", dest="pandoc_path",
+        default="/usr/bin/pandoc",
+        help="Provide custom pandoc path. Must be full path to executable")
+    parser.add_argument("-po", "--print-pandoc-opts", dest="print_pandoc_opts",
+                        action="store_true",
+                        help="Print pandoc options and exit")
+    parser.add_argument("-p", "--post-processor",
+                        dest="post_processor", default="",
+                        help="python module (or filename, must be in path) from which to load\n"
+                        "post_processor function should be named \"post_processor\"")
+    parser.add_argument("--templates-dir",
+                        help="Directory where templates are placed")
+    parser.add_argument("--csl-dir",
+                        help="Directory where csl files are placed")
+    parser.add_argument("-pg", "--print-generation-opts",
+                        action="store_true",
+                        help="Print pandoc options for filetype (e.g., for 'pdf') and exit")
+    parser.add_argument("-L", "--log-file",
+                        dest="log_file", default="",
+                        help="Log file to output instead of stdout. Optional")
+    parser.add_argument("-l", "--log-level",
+                        dest="log_level", default="warning",
+                        help="Debug Level. One of: error, warning, info, debug")
     short_help = parser.format_help()
-    add_common_args(parser)
     long_help = parser.format_help()
     subparsers = parser.add_subparsers(help="Sub Commands", dest="command")
-    watch_parser = add_watch_parser(subparsers)
-    convert_parser = add_convert_parser(subparsers)
+    add_watch_parser(subparsers)
+    add_convert_parser(subparsers)
     args, extra = parser.parse_known_args()
     if args.help:
         print(short_help)
     if args.long_help:
         print("pndconf global options:\n" + long_help.replace(shorter_help, ""))
-    bleh({"watch": watch_parser, "convert": convert_parser}, args, extra)
+    if not args.command:
+        print("No command given. Issue a command or a switch.\n")
+        print(short_help)
+    else:
+        check_and_dispatch_command(args, extra)
 
 
 if __name__ == '__main__':
