@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 import os
 import sys
@@ -54,7 +54,6 @@ def print_pandoc_opts(stdout, stderr):
         loge(f"Pandoc exited with error {stderr.decode('utf-8')}")
     else:
         loge(f"Pandoc options are \n{stdout.decode('utf-8')}")
-    sys.exit(0)
 
 
 def print_generation_opts(args, config):
@@ -64,7 +63,6 @@ def print_generation_opts(args, config):
             logi(f"Generation options for {ft} are:\n\t{[*opts.items()]}")
         else:
             loge(f"No generation options for {ft}")
-    sys.exit(0)
 
 
 def set_exclude_regexps(args, config):
@@ -112,10 +110,10 @@ def set_log_levels_and_maybe_log_pandoc_output(args, config, out):
         logw("Log file isn't implemented yet. Will output to stdout")
 
 
+# TODO: Need Better checks
+# NOTE: These options will override pandoc options in all the sections of
+#       the config file
 def validate_extra_args(extra):
-    # TODO: Need Better checks
-    # NOTE: These options will override pandoc options in all the sections of
-    #       the config file
     for i, arg in enumerate(extra):
         if not arg.startswith('-') and not (i >= 1 and extra[i-1] == "-V"):
             loge(f"Unknown pdfconf option {arg}.\n"
@@ -124,31 +122,38 @@ def validate_extra_args(extra):
             sys.exit(1)
         if arg.startswith('--') and '=' not in arg:
             loge(f"Unknown pdfconf option {arg}.\n"
-                 f"If it's a pandoc option {arg}, it must be joined with =."
+                 f"If it's a pandoc option {arg}, it must be joined with \"=\". "
                  f"e.g. {arg}=some_val")
             sys.exit(1)
 
 
-def get_config(args: argparse.Namespace, extra: List[str]) -> Configuration:
+# CHECK: Since the options like these are really commmon options and not usually
+#        specified in the config.ini (which only contains generation) options
+#        anyway. Perhaps they should be moved to separate config classes.
+def get_config_and_pandoc_output(args: argparse.Namespace)\
+        -> Tuple[Configuration, Tuple[str, str]]:
     pandoc_path, pandoc_version = pandoc_version_and_path(args.pandoc_path)
     out, err = get_pandoc_help_output(pandoc_path)
-    logi(f"Pandoc path is {pandoc_path}")
-    if args.print_pandoc_opts:
-        print_pandoc_opts(out, err)
+    logi(f"Pandoc path is {pandoc_path}\n")
+    # NOTE: This one is only watch specific
     watch_dir = getattr(args, "watch_dir", None)
+    # NOTE: these options are common and added by subcommand parsers
+    output_dir = Path(getattr(args, "output_dir", "."))
+    no_citeproc = getattr(args, "no_citeproc", None)
+    same_pdf_output_dir = getattr(args, "same_pdf_output_dir", False)
     config = Configuration(watch_dir=watch_dir,
-                           output_dir=args.output_dir,
+                           output_dir=output_dir,
                            config_file=args.config_file,
                            pandoc_path=pandoc_path,
                            pandoc_version=pandoc_version,
-                           no_citeproc=args.no_citeproc,
+                           no_citeproc=no_citeproc,
                            csl_dir=args.csl_dir,
                            templates_dir=args.templates_dir,
                            post_processor=args.post_processor,
-                           same_output_dir=args.same_output_dir,
+                           same_pdf_output_dir=same_pdf_output_dir,
                            dry_run=args.dry_run)
     set_log_levels_and_maybe_log_pandoc_output(args, config, out)
-    return config
+    return config, (out, err)
 
 
 def add_common_args(parser):
@@ -162,9 +167,36 @@ def add_common_args(parser):
                         help=f"Which formats to output. Can be one of [{', '.join(gentypes)}].\n"
                         "Defaults to pdf. You can choose multiple generation at once.\n"
                         "E.g., 'pndconf -g pdf,html' or 'pndconf -g beamer,reveal'")
-    parser.add_argument("--same-output-dir", action="store_true", dest="same_output_dir",
+    parser.add_argument("--same-pdf-output-dir", action="store_true", dest="same_pdf_output_dir",
                         help="Output tex files and pdf to same dir as markdown file.\n"
                         "Default is to create a separate folder with a \"_files\" suffix")
+
+
+def common_args_parser():
+    """Hacky common args parser.
+
+    Only to generate default arguments before actual commands are called, all
+    because I didn't want to put the generation/output etc. opts before the
+    commands.
+
+    """
+    parser = MyParser(allow_abbrev=False,
+                      add_help=False,
+                      formatter_class=argparse.RawTextHelpFormatter)
+    parser.add_argument("-o", "--output-dir",
+                        dest="output_dir", default=".",
+                        help="Directory for output files. Defaults to current directory")
+    parser.add_argument("--no-citeproc", action="store_true", dest="no_citeproc",
+                        help="Whether to process the citations via citeproc.")
+    parser.add_argument("-g", "--generation",
+                        dest="generation", default="pdf",
+                        help=f"Which formats to output. Can be one of [{', '.join(gentypes)}].\n"
+                        "Defaults to pdf. You can choose multiple generation at once.\n"
+                        "E.g., 'pndconf -g pdf,html' or 'pndconf -g beamer,reveal'")
+    parser.add_argument("--same-pdf-output-dir", action="store_true", dest="same_pdf_output_dir",
+                        help="Output tex files and pdf to same dir as markdown file.\n"
+                        "Default is to create a separate folder with a \"_files\" suffix")
+    return parser
 
 
 def add_convert_parser(subparsers):
@@ -195,7 +227,6 @@ def add_convert_parser(subparsers):
                         "Helpful when pdflatex is run with bibtex etc."
                         "and references need not be updated.")
     add_common_args(parser)
-    return parser
 
 
 def add_watch_parser(subparsers):
@@ -238,7 +269,6 @@ def add_watch_parser(subparsers):
                               default="",
                               help="Specific files to exclude from watching")
     add_common_args(parser)
-    return parser
 
 
 def watch(args, config):
@@ -298,14 +328,31 @@ def convert(args, config):
         loge("Error! Some input files not markdown")
     else:
         logbi(f"Will compile {input_files} to {config.output_dir} once.")
+        if config.same_pdf_output_dir:
+            logbi("Will compile pdf files to same directory as input.")
         config.compile_files(input_files)
 
 
-def check_and_dispatch_command(args, extra):
-    config = get_config(args, extra)
+def check_and_dispatch_command(args, extra, short_help):
+    config, out_err = get_config_and_pandoc_output(args)
+
+    common_args, _ = common_args_parser().parse_known_args()
+
+    if args.dump_default_config:
+        with open(Path(__file__).parent.joinpath("config_default.ini")) as f:
+            print(f.read())
+        sys.exit(0)
+    if args.print_pandoc_opts:
+        print_pandoc_opts(*out_err)
+        sys.exit(0)
     if args.print_generation_opts:
-        print_generation_opts(args, config)
-    if not args.generation:
+        print_generation_opts(common_args, config)
+        sys.exit(0)
+    if not args.command:
+        loge("No command given. Issue a command or a switch.\n")
+        print(short_help)
+        sys.exit(1)
+    if not common_args.generation:
         loge("Generation options cannot be empty")
         sys.exit(1)
 
@@ -313,7 +360,9 @@ def check_and_dispatch_command(args, extra):
     validate_extra_args(extra)
     logbi(f"Will generate for {args.generation.upper()}")
     logbi(f"Extra pandoc args are {extra}")
-    config.set_cmdline_opts(args.generation.split(','), extra)
+
+    # Update generation options, it'll generate everything by default
+    config.update_generation_options(args.generation.split(','), extra)
 
     if args.command == "watch":
         watch(args, config)
@@ -321,12 +370,25 @@ def check_and_dispatch_command(args, extra):
         convert(args, config)
 
 
+class MyParser(argparse.ArgumentParser):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    def error(self, message):
+        loge(message)
+        print("")
+        self.print_usage(sys.stderr)
+        sys.exit(1)
+
+
 def main():
-    parser = argparse.ArgumentParser("pndconf: Pandoc Configuration Manager and File Watcher",
-                                     usage=usage,
-                                     allow_abbrev=False,
-                                     add_help=False,
-                                     formatter_class=argparse.RawTextHelpFormatter)
+    description = "pndconf: Pandoc Configuration Manager and File Watcher"
+    # parser = argparse.ArgumentParser(description,
+    parser = MyParser(description,
+                      usage=usage,
+                      allow_abbrev=False,
+                      add_help=False,
+                      formatter_class=argparse.RawTextHelpFormatter)
     shorter_help = parser.format_help()
     parser.add_argument("-h", "--help", action="store_true",
                         help="Display help and exit")
@@ -344,10 +406,10 @@ def main():
                         help="Dry run. Don't actually do anything.")
     parser.add_argument("--dump-default-config", action="store_true",
                         help="Dump given config or default config.")
-    parser.add_argument(
-        "--pandoc-path", dest="pandoc_path",
-        default="/usr/bin/pandoc",
-        help="Provide custom pandoc path. Must be full path to executable")
+    short_help = parser.format_help()
+    parser.add_argument("--pandoc-path", dest="pandoc_path",
+                        default="/usr/bin/pandoc",
+                        help="Provide custom pandoc path. Must be full path to executable")
     parser.add_argument("-po", "--print-pandoc-opts", dest="print_pandoc_opts",
                         action="store_true",
                         help="Print pandoc options and exit")
@@ -368,21 +430,20 @@ def main():
     parser.add_argument("-l", "--log-level",
                         dest="log_level", default="warning",
                         help="Debug Level. One of: error, warning, info, debug")
-    short_help = parser.format_help()
     long_help = parser.format_help()
     subparsers = parser.add_subparsers(help="Sub Commands", dest="command")
     add_watch_parser(subparsers)
     add_convert_parser(subparsers)
     args, extra = parser.parse_known_args()
     if args.help:
-        print(short_help)
+        print(description)
+        print("\n", short_help)
+        sys.exit(0)
     if args.long_help:
-        print("pndconf global options:\n" + long_help.replace(shorter_help, ""))
-    if not args.command:
-        print("No command given. Issue a command or a switch.\n")
-        print(short_help)
-    else:
-        check_and_dispatch_command(args, extra)
+        print(description, "\n")
+        print("Global options:\n" + long_help.replace(shorter_help, ""))
+        sys.exit(0)
+    check_and_dispatch_command(args, extra, short_help)
 
 
 if __name__ == '__main__':

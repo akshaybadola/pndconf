@@ -23,7 +23,7 @@ Pathlike = Union[str, Path]
 #       separate from config maybe
 # TODO: remove output dir from watch if same as watch dir
 class Configuration:
-    def __init__(self, watch_dir: Path, output_dir: Path,
+    def __init__(self, watch_dir: Optional[Path], output_dir: Path,
                  config_file: Optional[Path],
                  pandoc_path: Path,
                  pandoc_version: str,
@@ -31,7 +31,7 @@ class Configuration:
                  csl_dir: Optional[Path] = None,
                  templates_dir: Optional[Path] = None,
                  post_processor: Optional[Callable] = None,
-                 same_output_dir: bool = False,
+                 same_pdf_output_dir: bool = False,
                  dry_run=False,):
         self.watch_dir = watch_dir
         self.output_dir = output_dir
@@ -52,7 +52,7 @@ class Configuration:
         self._excluded_folders: List[str] = []
         self._included_extensions: List[str] = []
         self._excluded_files: List[str] = []
-        self.same_output_dir = same_output_dir
+        self.same_pdf_output_dir = same_pdf_output_dir
         self.dry_run = dry_run
         self._log_file = None
         # self._use_extra_opts = extra_opts
@@ -150,8 +150,8 @@ class Configuration:
     def cmdline_opts(self) -> Dict[str, str]:
         return self._cmdline_opts
 
-    def set_cmdline_opts(self, filetypes: List[str], pandoc_options: List[str]) -> None:
-        """Update the config :code:`self._conf` with options from command line.
+    def update_generation_options(self, filetypes: List[str], pandoc_options: List[str]) -> None:
+        """Update the generation config :code:`self._conf` with options from command line.
 
         Args:
             filetypes: The filetypes for which required to generate

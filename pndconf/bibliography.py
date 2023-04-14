@@ -18,7 +18,7 @@ from . import transforms
 #       should be kept.
 #       Also at present duplicates are simply written to the bibtex/biblatex file
 def generate_bibtex(in_file: Path, metadata: Dict, style: str,
-                    text: str, pandoc_path: Path) -> str:
+                    text: str, pandoc_path: Path) -> Path:
     """Generate bibtex for markdown file.
 
     Args:
@@ -69,7 +69,7 @@ def generate_bibtex(in_file: Path, metadata: Dict, style: str,
     with open(out_file, "w") as f:
         f.write("".join(bibs))
     metadata["bibliography"] = [str(out_file.absolute())]
-    return str(out_file)
+    return out_file
 
 
 # TODO: `t` should be a hook from which the functions can be appended or

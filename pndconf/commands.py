@@ -6,7 +6,6 @@ from common_pyutil.functional import unique
 
 from .util import (update_command, get_csl_or_template, expandpath,
                    compress_space, logd, loge, logi, logbi, logw)
-
 from .bibliography import generate_bibtex
 
 Pathlike = Union[str, Path]
@@ -34,21 +33,21 @@ def get_template_or_csl_subr(argtype: str, csl_or_template: str,
     elif search_dir:
         maybe_file = get_csl_or_template(argtype, csl_or_template, search_dir)
     if Path(maybe_file).exists():
-        return maybe_file
+        return str(maybe_file)
     if argtype in [x.name for x in Path(in_file).parent.iterdir()]:
         check_dir = Path(in_file).parent.joinpath(argtype).absolute()
         maybe_file = get_csl_or_template(argtype, csl_or_template, check_dir)
     if Path(maybe_file).exists():
-        return maybe_file
+        return str(maybe_file)
     else:
         check_dir = Path(in_file).parent
         maybe_file = get_csl_or_template(argtype, csl_or_template, check_dir)
         if Path(maybe_file).exists():
-            return maybe_file
+            return str(maybe_file)
         else:
             logw(f"{argtype} file for \"{csl_or_template}\" not found. "
                  "This will default to pandoc template if it exists")
-            return maybe_file
+            return str(maybe_file)
 
 
 def update_in_file_paths(in_file_pandoc_opts: Dict[str, str], csl_dir: Optional[Path],
@@ -78,7 +77,8 @@ class Commands:
 
     """
 
-    def __init__(self, config, in_file, file_text, file_pandoc_opts):
+    def __init__(self, config: "Configuration", in_file: Path,
+                 file_text: str, file_pandoc_opts: Dict):
         self.config = config
         self.in_file = in_file
         self.output_dir = self.get_file_output_dir(in_file)
@@ -92,7 +92,7 @@ class Commands:
     @property
     def pdflatex(self) -> str:
         return 'pdflatex  -file-line-error ' +\
-            (" " if self.config.same_output_dir else
+            (" " if self.config.same_pdf_output_dir else
              '-output-directory ' + self.out_path_no_ext + '_files') +\
              ' -interaction=nonstopmode --synctex=1 ' +\
              self.out_path_no_ext + '.tex'
@@ -152,8 +152,8 @@ class Commands:
 
     def get_file_output_dir(self, filename: Pathlike) -> Path:
         if Path(filename).absolute():
-            file_dir = Path(filename).parent
-        if self.config.same_output_dir:
+            file_dir = Path(filename).parent.absolute()
+        if self.config.same_pdf_output_dir:
             output_dir = file_dir
             logw("Will output to same dir as input file.")
         else:
@@ -217,13 +217,35 @@ class Commands:
         return f"cd {self.output_dir} {mk_tex_files_dir}"
 
     def get_pdf_output_dir(self):
-        if self.config.same_output_dir:
+        if self.config.same_pdf_output_dir:
             tex_files_dir = self.output_dir
             mk_tex_files_dir = ""
         else:
             tex_files_dir = f"{self.out_path_no_ext}_files"
             mk_tex_files_dir = f"&& mkdir -p {tex_files_dir}"
         return tex_files_dir, mk_tex_files_dir
+
+    def add_bibtex_cmd(self, bib_file, tex_files_dir, pdflatex):
+        cmd = []
+        bibtex = f"bibtex {self.filename_no_ext}"
+        copy_bibtex = "" if self.config.same_pdf_output_dir\
+            else f"&& cp {bib_file.absolute()} {tex_files_dir}/"
+        cmd.append(f"cd {self.output_dir} {copy_bibtex}")
+        cmd.append(f"cd {tex_files_dir} && {bibtex}")
+        pdflatex = pdflatex.replace(f'{self.out_path_no_ext}.tex',
+                                    f'../{Path(self.out_path_no_ext).stem}.tex')\
+                           .replace(f'cd {self.output_dir}', f'cd {tex_files_dir}')
+        cmd.append(pdflatex)
+        cmd.append(pdflatex)
+        return cmd
+
+    # FIXME: This may not be correct
+    def add_biber_cmd(self, bib_file, tex_files_dir, pdflatex):
+        cmd = []
+        biber = f"biber {tex_files_dir}/{self.filename_no_ext}.bcf"
+        cmd.append(f"cd {self.output_dir} && {biber}")
+        cmd.append(pdflatex)
+        return cmd
 
     def add_pdf_specific_options(self, command, ft):
         # CHECK: If we don't use pdflatex explicitly but still use bibtex/biblatex
@@ -241,37 +263,48 @@ class Commands:
         # NOTE: Output filetype was PDF but generation was tex in config
         #       OR use explicit pdflatex for pdf instead of pandoc's engine
         # FIXME: This should be more explicit somewhere
-        if "-o" in self.config.conf[ft] and self.config.conf[ft]["-o"] != "pdf":
+        gentype = self.config.conf[ft].get("-o", None)
+        if gentype in {"tex", "latex"}:
+            logw(f"Asked to generate pdf but configuration says to generate {gentype}. "
+                 "Will generate via pdflatex.")
             tex_files_dir, mk_tex_files_dir = self.get_pdf_output_dir()
+            # NOTE: cd {self.output_dir} is crucial for correct directory
+            #       selection
+            pdflatex = f"cd {self.output_dir} && {self.pdflatex}"
             pdf_cmd.append(self.pdf_cmd_switch_to_output_dir(mk_tex_files_dir))
-            if self.config.no_cite_cmd or self.config.same_output_dir:
+            if self.config.no_cite_cmd or not self.config.same_pdf_output_dir:
                 pdf_cmd.append(f"rm {tex_files_dir}/*")
-            pdf_cmd.append(f"{self.pdflatex}")
+            pdf_cmd.append(pdflatex)
 
             if self.config.no_cite_cmd:
                 logbi(f"Not running {bib_cmd} as asked.")
 
+            if not self.config.same_pdf_output_dir:
+                pdflatex = pdflatex.replace(f'{self.out_path_no_ext}.tex',
+                                            f'../{Path(self.out_path_no_ext).stem}.tex')
             if self.config.no_citeproc and not self.config.no_cite_cmd:
                 if bib_cmd == "biber" and bib_file:
-                    biber = f"biber {tex_files_dir}/{self.filename_no_ext}.bcf"
-                    pdf_cmd.append(f"cd {self.output_dir} && {biber}")
-                    pdf_cmd.append(f"cd {self.output_dir} && {self.pdflatex}")
+                    bib_commands = self.add_biber_cmd(bib_file, tex_files_dir, pdflatex)
+                    # biber = f"biber {tex_files_dir}/{self.filename_no_ext}.bcf"
+                    # pdf_cmd.append(f"cd {self.output_dir} && {biber}")
+                    # pdf_cmd.append(pdflatex)
                 elif bib_cmd == "bibtex":
-                    bibtex = f"bibtex {self.filename_no_ext}"
-                    copy_bibtex = "" if self.config.same_output_dir else f"&& cp {bib_file} {tex_files_dir}/"
-                    pdf_cmd.append(f"cd {self.output_dir} {copy_bibtex}")
-                    pdf_cmd.append(f"cd {tex_files_dir} && {bibtex}")
-                    if self.config.same_output_dir:
-                        pdflatex = self.pdflatex
-                    else:
-                        pdflatex = self.pdflatex.replace(f'{self.out_path_no_ext}.tex',
-                                                         f'../{Path(self.out_path_no_ext).stem}.tex')
-                    # NOTE: pdflatex has to be run twice after bibtex,
-                    #       can't we just use biblatex?
-                    pdf_cmd.append(f"cd {tex_files_dir} && {pdflatex}")
-                    pdf_cmd.append(f"cd {tex_files_dir} && {pdflatex}")
+                    bib_commands = self.add_bibtex_cmd(bib_file, tex_files_dir, pdflatex)
+                    # bibtex = f"bibtex {self.filename_no_ext}"
+                    # copy_bibtex = "" if self.config.same_pdf_output_dir else f"&& cp {bib_file} {tex_files_dir}/"
+                    # pdf_cmd.append(f"cd {self.output_dir} {copy_bibtex}")
+                    # pdf_cmd.append(f"cd {tex_files_dir} && {bibtex}")
+                    # if not self.config.same_pdf_output_dir:
+                    #     pdflatex = pdflatex.replace(f'{self.out_path_no_ext}.tex',
+                    #                                 f'../{Path(self.out_path_no_ext).stem}.tex')
+                    # # NOTE: pdflatex has to be run twice after bibtex,
+                    # #       can't we just use biblatex?
+                    # pdf_cmd.append(f"cd {tex_files_dir} && {pdflatex}")
+                    # pdf_cmd.append(f"cd {tex_files_dir} && {pdflatex}")
                 else:
+                    bib_commands = []
                     raise logw("No citation processor specified. References may not be defined correctly.")
+                pdf_cmd.extend(bib_commands)
             out_file = str(Path(self.out_path_no_ext + '_files').
                            joinpath(self.filename_no_ext + ".pdf"))
         else:
@@ -308,8 +341,8 @@ class Commands:
 
             self.fix_command_for_pandoc_versions(command)
 
-            # TODO: Add EXPLICIT option in config (and warn when implicit) for
-            #       pdf generation via pdflatex
+            # TODO: Add EXPLICIT option in config for pdf generation via
+            #       pdflatex
             if ft == 'pdf':
                 out_file, pdf_cmd = self.add_pdf_specific_options(command, ft)
             else:
