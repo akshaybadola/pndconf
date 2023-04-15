@@ -1,4 +1,3 @@
-# from .pndconf import main
 from .parser import main
 
 

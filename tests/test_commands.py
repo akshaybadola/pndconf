@@ -4,6 +4,7 @@ import pytest
 import re
 from pndconf import commands
 from pndconf.commands import Commands
+from pndconf.config import read_md_file_with_header
 
 
 def test_csl_subr_should_give_correct_csl_file():
@@ -16,7 +17,7 @@ def test_template_subr_should_give_correct_csl_file():
 
 def test_commands_generates_only_for_given_filetypes(config):
     in_file = Path("./examples/article.md")
-    text, pandoc_opts = config.read_md_file(in_file)
+    text, pandoc_opts = read_md_file_with_header(in_file)
     commands = Commands(config, in_file, text, pandoc_opts)
     cmd = commands.build_commands()
     filetypes = ['blog', 'html', 'reveal', 'latex', 'tex', 'pdf', 'beamer']
@@ -44,7 +45,7 @@ def test_update_in_file_paths_should_update_opts_correctly():
 
 def test_commands_should_get_correct_bibliography_opts(config):
     in_file = Path("./examples/article.md")
-    text, pandoc_opts = config.read_md_file(in_file)
+    text, pandoc_opts = read_md_file_with_header(in_file)
     commands = Commands(config, in_file, text, pandoc_opts)
     cmd = []
     bibopts = commands.get_bibliography_opts(cmd)
@@ -58,10 +59,11 @@ def test_commands_should_get_correct_bibliography_opts(config):
 
 def test_commands_should_generate_correct_pdf_options(config):
     in_file = Path("./examples/article.md")
-    text, pandoc_opts = config.read_md_file(in_file)
+    text, pandoc_opts = read_md_file_with_header(in_file)
     commands = Commands(config, in_file, text, pandoc_opts)
     cmd = []
-    pdf_file, pdfopts = commands.add_pdf_specific_options(cmd, "pdf")
+    pdfopts = commands.add_pdf_specific_options(cmd, "pdf")
+    pdf_file = commands.pdf_out_file
     assert Path(pdf_file).name == "article.pdf"
     assert any("pdflatex" in x for x in pdfopts)
 
@@ -71,7 +73,7 @@ def test_commands_should_give_correct_pdf_generation_command_with_citeproc(confi
     root_dir = config.output_dir
     stem = in_file.stem
     out_file = str(root_dir.joinpath(stem + "." + config.conf['pdf']['-o']))
-    text, pandoc_opts = config.read_md_file(in_file)
+    text, pandoc_opts = read_md_file_with_header(in_file)
     config._filetypes = ["pdf"]
     commands = Commands(config, in_file, text, pandoc_opts)
     cmd = commands.build_commands()
@@ -96,7 +98,7 @@ def test_commands_should_give_correct_pdf_generation_command_with_bibtex(config)
     root_dir = config.output_dir
     stem = in_file.stem
     out_file = str(root_dir.joinpath(stem + "." + config.conf['pdf']['-o']))
-    text, pandoc_opts = config.read_md_file(in_file)
+    text, pandoc_opts = read_md_file_with_header(in_file)
     config._filetypes = ["pdf"]
     config.no_citeproc = True
     commands = Commands(config, in_file, text, pandoc_opts)
@@ -116,4 +118,3 @@ def test_commands_should_give_correct_pdf_generation_command_with_bibtex(config)
     final_pdflatex = f"cd {out_dir} && pdflatex -file-line-error -output-directory {out_dir} -interaction=nonstopmode --synctex=1 {out_file}".replace(f"{out_file}", f"../{Path(out_file).name}")
     assert pdf_cmd[7] == final_pdflatex
     assert pdf_cmd[8] == final_pdflatex
-

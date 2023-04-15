@@ -5,8 +5,8 @@ import chardet
 import yaml
 from subprocess import Popen, PIPE
 
-from .util import get_now as now
-from .colors import COLORS
+from .util import get_now as now, logbbi
+from .const import COLORS
 
 
 PostProc = List[Dict[str, str]]
@@ -183,6 +183,41 @@ def is_tex_command(cmd: str) -> bool:
                 for s in splits])
 
 
+def exec_tex_command(command):
+    try:
+        # status = exec_tex_compile(command)
+        if "pdftex" in command or "pdflatex" in command:
+            tex_compiler.mode = "latex"
+        elif "biber" in command:
+            tex_compiler.mode = "biber"
+        else:
+            raise ValueError(f"Unknown tex command in {command}")
+        status = tex_compiler.compile(command)
+        return status
+    except Exception as e:
+        print(f"Error occured while compiling file {e}")
+        return False
+
+
+def success_message(out, err):
+    if out:
+        out = out.strip("\n")
+        print(f"Output from command: {out}")
+    if err:
+        err = err.strip("\n")
+        err = "\n".join([f"\t{e}" for e in err.split("\n")])
+        print(f"No error from command, but: {COLORS.ALT_RED}\n{err}{COLORS.ENDC}")
+
+
+def error_message(err, p):
+    if err:
+        print(f"Error occured : {err}")
+    elif "pdflatex" in p.args or "pdftex" in p.args:
+        print("Got err return from pdflatex. Check log in output directory")
+    else:
+        print("Some unknown error reported. If all outputs seem fine, then ignore it.")
+
+
 def exec_command(command: str, stdin: Optional[str] = None, noshell: bool = False):
     """Execute a command via :class:`Popen`.
 
@@ -207,47 +242,23 @@ def exec_command(command: str, stdin: Optional[str] = None, noshell: bool = Fals
     print(f"{prefix}{cmd}")
     os.chdir(os.path.abspath(os.getcwd()))
     if is_tex_command(command):
-        try:
-            # NOTE: Changed to TexCompiler
-            # status = exec_tex_compile(command)
-            if "pdftex" in command or "pdflatex" in command:
-                tex_compiler.mode = "latex"
-            elif "biber" in command:
-                tex_compiler.mode = "biber"
-            else:
-                raise ValueError(f"Unknown tex command in {command}")
-            status = tex_compiler.compile(command)
-            return status
-        except Exception as e:
-            print(f"Error occured while compiling file {e}")
-            return False
+        return exec_tex_command(command)
+
+    if stdin:
+        p = Popen(command, stdin=PIPE, stdout=PIPE, stderr=PIPE, shell=shell)
+        output = p.communicate(input=stdin.encode())
     else:
-        if stdin:
-            p = Popen(command, stdin=PIPE, stdout=PIPE, stderr=PIPE, shell=shell)
-            output = p.communicate(input=stdin.encode())
-        else:
-            p = Popen(command, stdout=PIPE, stderr=PIPE, shell=shell)
-            output = p.communicate()
-        out = output[0].decode("utf-8")
-        err = output[1].decode("utf-8")
-        success = not p.returncode
-        if success:
-            if out:
-                out = out.strip("\n")
-                print(f"Output from command: {out}")
-            if err:
-                err = err.strip("\n")
-                err = "\n".join([f"\t{e}" for e in err.split("\n")])
-                print(f"No error from command, but: {COLORS.ALT_RED}\n{err}{COLORS.ENDC}")
-            return True
-        else:
-            if err:
-                print(f"Error occured : {err}")
-            elif "pdflatex" in p.args or "pdftex" in p.args:
-                print(f"Got err return from pdflatex. Check log in output directory")
-            else:
-                print(f"Some unknown error reported. If all outputs seem fine, then ignore it.")
-            return False
+        p = Popen(command, stdout=PIPE, stderr=PIPE, shell=shell)
+        output = p.communicate()
+    out = output[0].decode("utf-8")
+    err = output[1].decode("utf-8")
+    success = not p.returncode
+    if success:
+        success_message(out, err)
+        return True
+    else:
+        error_message(err, p)
+        return False
 
 
 def markdown_compile(commands: Dict[str, Dict[str, Union[List[str], str]]],
@@ -261,7 +272,7 @@ def markdown_compile(commands: Dict[str, Dict[str, Union[List[str], str]]],
     if not isinstance(md_file, str) or not md_file.endswith('.md'):
         print(f"Not markdown file {md_file}")
         return None
-    print(f"\n{COLORS.BRIGHT_BLUE}Compiling {md_file} at {now()}{COLORS.ENDC}")
+    logbbi(f"\nCompiling {md_file} at {now()}")
     postprocess = []
     # NOTE: commands' values are either strings or lists of strings
     for filetype, command_dict in commands.items():

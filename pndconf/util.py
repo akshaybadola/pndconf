@@ -1,4 +1,4 @@
-from typing import List, Dict, Union, Optional
+from typing import List, Dict, Union, Optional, Tuple, Any
 import re
 import os
 import sys
@@ -7,8 +7,12 @@ import datetime
 import importlib
 from pathlib import Path
 
+import yaml
 
-from .colors import COLORS
+from .const import COLORS
+
+
+Pathlike = Union[str, Path]
 
 
 class Debounce:
@@ -56,6 +60,25 @@ class Debounce:
             # if x.endswith(".md"):
             #     print(self.objects, x)
             return x
+
+
+# TODO: The following should be replaced with separate tests
+# assert in_file.endswith('.md')
+# assert self._filetypes
+def read_md_file_with_header(filename: Pathlike) -> Optional[Tuple[str, Dict[str, Any]]]:
+    try:
+        with open(filename) as f:
+            splits = f.read().split('---', maxsplit=3)
+            if len(splits) == 3:
+                in_file_pandoc_opts = yaml.load(splits[1], Loader=yaml.FullLoader)
+                in_file_text = splits[2]
+            else:
+                in_file_pandoc_opts = {}
+                in_file_text = splits[0]
+    except Exception as e:
+        loge(f"Yaml parse error {e}. Will not compile.")
+        return None
+    return in_file_text, in_file_pandoc_opts
 
 
 def compress_space(x: str):
@@ -161,36 +184,50 @@ def get_now():
     return datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S")
 
 
-def loge(message, newline=True):
+def loge(message: str, newline: bool = True) -> str:
     "Log Error message"
     end = "\n" if newline else ""
     print(f"{COLORS.BRIGHT_RED}{message}{COLORS.ENDC}", end=end)
     return message
 
 
-def logw(message, newline=True):
+def logw(message: str, newline: bool = True) -> str:
     "Log Warning message"
     end = "\n" if newline else ""
     print(f"{COLORS.ALT_RED}{message}{COLORS.ENDC}", end=end)
     return message
 
 
-def logd(message, newline=True):
+def logd(message: str, newline: bool = True) -> str:
     "Log Debug message"
     end = "\n" if newline else ""
     print(message, end=end)
     return message
 
 
-def logi(message, newline=True):
+def logi(message: str, newline: bool = True) -> str:
     "Log Info message"
     end = "\n" if newline else ""
     print(message, end=end)
     return message
 
 
-def logbi(message, newline=True):
-    "Log Info message"
+def logbi(message: str, newline: bool = True) -> str:
+    "Log Info message with color blue"
     end = "\n" if newline else ""
     print(f"{COLORS.BLUE}{message}{COLORS.ENDC}", end=end)
+    return message
+
+
+def logbbi(message: str, newline: bool = True) -> str:
+    """Log message with bright blue color
+
+    Args:
+        message: Message
+        newline: Print newline
+
+
+    """
+    end = "\n" if newline else ""
+    print(f"{COLORS.BRIGHT_BLUE}{message}{COLORS.ENDC}", end=end)
     return message

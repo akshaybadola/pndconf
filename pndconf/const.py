@@ -1,3 +1,6 @@
+from enum import IntEnum
+
+
 class COLORS:
     """Color codes for terminal colors
     """
@@ -14,3 +17,14 @@ class COLORS:
     BOLD = '\033[1m'
     UNDERLINE = '\033[4m'
     ENDC = '\033[0m'
+
+
+class LogLevels(IntEnum):
+    error = 0
+    warning = 1
+    info = 2
+    debug = 3
+
+
+gentypes = ["html", "pdf", "reveal", "beamer", "latex"]
+log_levels = [x.name for x in LogLevels]

@@ -1,13 +1,26 @@
-from typing import List, Dict, Union, Optional
+from typing import List, Dict, Union, Optional, Callable
 import re
 from pathlib import Path
-from functools import partial
 from subprocess import Popen, PIPE
 
 from bibtexparser import bparser, bwriter
-from common_pyutil.functional import compose
+from common_pyutil.functional import compose, identity, rpartial
 
 from . import transforms
+
+
+def compose_transforms(transform_names: List[str]) -> Callable:
+    bib_transforms = []
+    for name in transform_names:
+        match = re.match(r"(.+?)\((.+)\)", name)
+        if match:
+            func_name, args = re.match(r"(.+?)\((.+)\)", name).groups()  # type: ignore
+            args = args.split(":")
+            func = getattr(transforms, func_name)
+            bib_transforms.append(rpartial(func, args))
+        else:
+            bib_transforms.append(getattr(transforms, name))
+    return compose(*bib_transforms)
 
 
 # NOTE: An alternative library is :mod:`biblib`, but that's not been updated
@@ -18,7 +31,7 @@ from . import transforms
 #       should be kept.
 #       Also at present duplicates are simply written to the bibtex/biblatex file
 def generate_bibtex(in_file: Path, metadata: Dict, style: str,
-                    text: str, pandoc_path: Path) -> Path:
+                    text: str, pandoc_path: Path, transform_names: List[str]) -> Path:
     """Generate bibtex for markdown file.
 
     Args:
@@ -56,13 +69,14 @@ def generate_bibtex(in_file: Path, metadata: Dict, style: str,
     # NOTE: parser is used primarily to validate the bibtexs. We might use it to
     #       transform them later
     parser = bparser.BibTexParser(common_strings=True)
+    transform = compose_transforms(transform_names) if transform_names else identity
     try:
         bibtex = parser.parse("\n".join(bibs))  # noqa
         p = Popen(f"{pandoc_path} -r markdown -s -t {style} {in_file}",
                   shell=True, stdout=PIPE, stderr=PIPE)
         yaml_refs, err = p.communicate()
         parser.parse(yaml_refs)
-        bibs = transform_bibtex(bibtex.entries)
+        bibs = transform_bibtex(bibtex.entries, transform)  # type: ignore
     except Exception:
         msg = "Error while parsing bibtexs. Check sources."
         raise ValueError(msg)
@@ -72,11 +86,14 @@ def generate_bibtex(in_file: Path, metadata: Dict, style: str,
     return out_file
 
 
+default_transforms = ["abbreviate_venue", "change_to_title_case", "normalize"]
+
+
 # TODO: `t` should be a hook from which the functions can be appended or
 #       removed.
 # TODO: Not only should they be removable, but it should be configurable
 #       via a config file
-def transform_bibtex(entries: List[Dict[str, str]]) -> List[str]:
+def transform_bibtex(entries: List[Dict[str, str]], transform: Callable) -> List[str]:
     """Transform bibtex entries according to given functions.
 
     Args:
@@ -86,13 +103,13 @@ def transform_bibtex(entries: List[Dict[str, str]]) -> List[str]:
 
     """
     # Can either use abbreviate after full names or contractions
-    t = compose(transforms.abbreviate_venue,
-                transforms.change_to_title_case,
-                transforms.standardize_venue,
-                transforms.normalize,
-                transforms.remove_url,
-                # transforms.date_to_year_month,
-                partial(transforms.remove_keys, keys=["file"]))  # HACK: leave doi for now
+    # t = compose(transforms.abbreviate_venue,
+    #             transforms.change_to_title_case,
+    #             transforms.standardize_venue,
+    #             transforms.normalize,
+    #             transforms.remove_url,
+    #             # transforms.date_to_year_month,
+    #             partial(transforms.remove_keys, keys=["file"]))  # HACK: leave doi for now
     # t = compose(transforms.change_to_title_case,
     #             transforms.contract_venue,
     #             transforms.normalize)
@@ -104,5 +121,5 @@ def transform_bibtex(entries: List[Dict[str, str]]) -> List[str]:
         # if ID in retval:
         #     existing = retval[ID]
         #     check_which_one_to_keep
-        retval[ID] = writer._entry_to_bibtex(t(ent.copy()))
+        retval[ID] = writer._entry_to_bibtex(transform(ent.copy()))
     return [*retval.values()]
