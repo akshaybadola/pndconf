@@ -17,6 +17,7 @@ Pathlike = Union[str, Path]
 
 
 # TODO: remove output dir from watch if same as watch dir
+# TODO: Config should be yaml instead of config.ini. Yaml is more flexible
 class Configuration:
     def __init__(self, watch_dir: Optional[Path], output_dir: Path,
                  config_file: Optional[Path],

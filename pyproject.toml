@@ -1,12 +1,12 @@
 [tool.poetry]
 name = "pndconf"
-version = "0.5.0"
+version = "0.5.1"
 description = ""
 authors = ["Akshay <akshay.badola.cs@gmail.com>"]
 license = "MIT"
 
 [tool.poetry.dependencies]
-python = "^3.7"
+python = "^3.8"
 watchdog = "^2.1.5"
 common-pyutil = "^0.8.0"
 chardet = "^4.0.0"

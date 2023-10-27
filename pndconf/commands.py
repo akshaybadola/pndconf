@@ -28,16 +28,17 @@ def get_template_or_csl_subr(argtype: str, csl_or_template: str,
     Where relative_path is the path relative to input file
 
     """
+    maybe_file = None
     if Path(csl_or_template).exists():
         maybe_file = expandpath(csl_or_template)
     elif search_dir:
         maybe_file = get_csl_or_template(argtype, csl_or_template, search_dir)
-    if Path(maybe_file).exists():
+    if maybe_file and Path(maybe_file).exists():
         return str(maybe_file)
     if argtype in [x.name for x in Path(in_file).parent.iterdir()]:
         check_dir = Path(in_file).parent.joinpath(argtype).absolute()
         maybe_file = get_csl_or_template(argtype, csl_or_template, check_dir)
-    if Path(maybe_file).exists():
+    if maybe_file and Path(maybe_file).exists():
         return str(maybe_file)
     else:
         check_dir = Path(in_file).parent
@@ -243,8 +244,8 @@ class Commands:
         """Get the appropriate bibliography options.
 
         Both configuration and file specific options are (SHOULD BE) checked.
-        """
 
+        """
         if self.config.no_citeproc:
             bib_cmds = {"--natbib": "bibtex", "--biblatex": "biblatex"}
             if not any(x in command for x in bib_cmds):
@@ -289,15 +290,37 @@ class Commands:
         return str(tex_files_dir), mk_tex_files_dir
 
     def pdflatex_with_target_file_in_parent_dir(self, pdflatex):
+        """pdflatex subcommand where output file is in the parent directory as tex files
+
+        Args:
+            pdflatex: :code:`pdflatex` command
+
+        """
         return pdflatex.replace(f'{self.out_path_no_ext}.tex',
                                 f'../{Path(self.out_path_no_ext).stem}.tex')
 
     def pdflatex_with_target_file_in_tex_files_dir(self, pdflatex, tex_files_dir):
+        """pdflatex subcommand where output file is in same directory as tex files
+
+        Args:
+            pdflatex: :code:`pdflatex` command
+            tex_files_dir: tex files directory
+
+        """
         return pdflatex.replace(f'{self.out_path_no_ext}.tex',
                                 f'../{Path(self.out_path_no_ext).stem}.tex')\
                        .replace(f'cd {self.output_dir}', f'cd {tex_files_dir}')
 
-    def add_bibtex_cmd(self, bib_file, tex_files_dir, pdflatex):
+    def add_bibtex_cmd(self, bib_file: Path, tex_files_dir: str, pdflatex: str):
+        """Generate the BibTeX command
+
+        Args:
+            bib_file: Bibliography file
+            tex_files_dir: Directory where LaTeX files are present
+            pdflatex: :code:`pdflatex` command
+
+
+        """
         cmd = []
         bibtex = f"bibtex {self.filename_no_ext}"
         copy_bibtex = "" if self.config.same_pdf_output_dir\
@@ -318,11 +341,23 @@ class Commands:
         cmd.append(pdflatex)
         return cmd
 
-    def get_bib_commands(self, bib_cmd, bib_file, tex_files_dir, pdflatex):
+    def get_bib_commands(self, bib_cmd: str, bib_file: Path,
+                         tex_files_dir: Pathlike, pdflatex: str):
+        """Generate the LaTeX specific bibliography commands.
+
+        Args:
+            bib_cmd: bibliography processor. One of bibtex or biber
+            bib_file: bibliography file
+            tex_files_dir: Directory where LaTeX files are present
+            pdflatex: The :code:`pdflatex` command.
+                      :code:`pdflatex` may include directory switching as required.
+
+
+        """
         if bib_cmd == "biber" and bib_file:
-            bib_commands = self.add_biber_cmd(bib_file, tex_files_dir, pdflatex)
+            bib_commands = self.add_biber_cmd(bib_file, str(tex_files_dir), pdflatex)
         elif bib_cmd == "bibtex":
-            bib_commands = self.add_bibtex_cmd(bib_file, tex_files_dir, pdflatex)
+            bib_commands = self.add_bibtex_cmd(bib_file, str(tex_files_dir), pdflatex)
         else:
             bib_commands = []
             logw("No citation processor specified. References may not be defined correctly.")
@@ -330,6 +365,8 @@ class Commands:
 
     @property
     def pdf_out_file(self) -> str:
+        """Output pdf file
+        """
         if self.config.same_pdf_output_dir:
             out_file = self.out_path_no_ext + ".pdf"
         else:
@@ -337,7 +374,15 @@ class Commands:
                            joinpath(self.filename_no_ext + ".pdf"))
         return out_file
 
-    def add_pdf_specific_options(self, command, ft) -> List[str]:
+    def add_pdf_specific_options(self, command: list[str], ft) -> List[str]:
+        """Add pdf specific options to command list
+
+        Args:
+            command: The command as a list of switches
+            ft: Filetype for generation. Even with pdf generation, certain
+                switches can vary
+
+        """
         # CHECK: If we don't use pdflatex explicitly but still use bibtex/biblatex
         #        for bibliography, can we still use pandoc with that?
         #        I think we can specify bibliography files but I don't need these
@@ -363,7 +408,7 @@ class Commands:
             #       selection
             pdflatex = f"cd {self.output_dir} && {self.pdflatex}"
             pdf_cmd.append(self.pdf_cmd_switch_to_output_dir(mk_tex_files_dir))
-            if self.config.no_cite_cmd or not self.config.same_pdf_output_dir:
+            if self.config.no_cite_cmd and not self.config.same_pdf_output_dir:
                 pdf_cmd.append(f"rm {tex_files_dir}/*")
             pdf_cmd.append(pdflatex)
 

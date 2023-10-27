@@ -97,3 +97,19 @@ def convert(args, config):
             logbi("Will compile pdf files to same directory as they're in.")
         config.compile_files(input_files)
 
+
+
+def standalone(args, config):
+    input_files = args.input_files.split(",")
+    not_input_files = [x for x in input_files if not os.path.exists(x)]
+    if not_input_files:
+        loge(f"{not_input_files} don't exist. Ignoring")
+    input_files = [x for x in input_files if os.path.exists(x)]
+    if not input_files:
+        loge("Error! No input files present or given")
+    elif not all(x.endswith(".md") for x in input_files):
+        loge("Error! Some input files not markdown")
+    else:
+        logbi(f"Will generate standalone files for {input_files} to {config.output_dir} once.")
+        raise NotImplementedError("Not implemented after this, LOL")
+
